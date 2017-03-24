@@ -1,0 +1,100 @@
+// Steerer control:
+//     front, left, right.
+// HW:
+//   - Arduino 101
+//   - PM-R3 expansion board
+//   - Steering engine(MG996)
+// PW   -----------Angle
+// 0.5ms-----------0c
+// 1.0ms-----------45c
+// 1.5ms-----------90c
+// 2.0ms-----------135c
+// 2.5ms-----------180c
+
+function Steerer() {
+
+    var steerer = {};
+
+    var pins = require("arduino101_pins");
+    var pwm = require("pwm");
+
+    var steerPin = pwm.open({ channel: pins.IO3 });
+
+    // Basic period(ms)
+    var period = 20;
+    var pulseWidth = 1.5;
+    // PW/Angle: (2.5-0.5) / 180 (ms/c)
+    var pw_angle = 0.011;
+    var front_angle = 90;
+
+    var setpwm = function (pinName, PWMvalue) {
+        pinName.setPeriod(period);
+        pinName.setPulseWidth(PWMvalue);
+    }
+
+    // check angle
+    var angle_check = function (angle) {
+        if (!angle || typeof angle !== "number") {
+            throw new Error("TypeError: Not a number!");
+        } else if (angle < 0 || angle > 45) {
+            throw new Error("RangeError: angle is " +
+                            "out of limitation(0-45)!");
+        }
+    }
+
+    // steerer state:
+    //     front, left, right
+    var steererState = null;
+    var setSteererState = function (stateValue) {
+        steererState = stateValue;
+    }
+
+    steerer.getSteererState = function () {
+        return steererState;
+    }
+
+    steerer.init = function() {
+        pulseWidth = 1.5;
+        setpwm(steerPin, pulseWidth);
+
+        setSteererState("front");
+    }
+
+    // angle: 90c
+    steerer.front = function () {
+        pulseWidth = 1.5;
+        setpwm(steerPin, pulseWidth);
+
+        setSteererState("front");
+
+        console.log("Steerer - Turn front(90c)");
+    }
+
+    // 0c < angle < 45c
+    steerer.left = function (angle) {
+        angle_check(angle);
+
+        pulseWidth = 0.5 + (front_angle - angle) * pw_angle;
+        setpwm(steerPin, pulseWidth);
+
+        setSteererState("left");
+
+        console.log("Steerer - Turn left (" + angle + "c)");
+    }
+
+    // 0c < angle < 45c
+    steerer.right = function (angle) {
+        angle_check(angle);
+
+        pulseWidth = 0.5 + (front_angle + angle) * pw_angle;
+        setpwm(steerPin, pulseWidth);
+
+        setSteererState("right");
+
+        console.log("Steerer - Turn right(" + angle + "c)");
+    }
+
+    return steerer;
+};
+
+module.exports.Steerer = new Steerer();
