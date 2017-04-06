@@ -1,9 +1,13 @@
 console.log("Minicar driver - start");
 
 var driver = require("Driver.js");
+var pwm = require("pwm");
+var pins = require("arduino101_pins");
 
 // Minicar driver init
-driver.init();
+var forwardPin = pwm.open({ channel: pins.IO6 });
+var reversePin = pwm.open({ channel: pins.IO5 });
+driver.init(forwardPin, reversePin);
 
 var checkNum = 0;
 var checkTimer = setInterval(function() {

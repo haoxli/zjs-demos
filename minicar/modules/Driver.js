@@ -9,14 +9,6 @@ function Driver() {
 
     var driver = {};
 
-    var pins = require("arduino101_pins");
-    var pwm = require("pwm");
-
-    // IO5, IO6 are implemented by R3 expansion board
-    // for reverse and forward function.
-    var forwardPin = pwm.open({ channel: pins.IO6 });
-    var reversePin = pwm.open({ channel: pins.IO5 });
-
     // Basic period(ms)
     var period = 20;
     var forwardPW = 0;
@@ -26,8 +18,13 @@ function Driver() {
     var suggestedPW = 30 / 100 * period;
 
     var setpwm = function (pinName, PWMvalue) {
-        pinName.setPeriod(period);
-        pinName.setPulseWidth(PWMvalue);
+        if (typeof pinName !== "object") {
+            throw new Error("TypeError: Not a object!");
+        } else if (pinName === null) {
+            throw new Error("Please defind operate pin");
+        }
+
+        pinName.setMilliseconds(period, PWMvalue);
     }
 
     // check duty cycle
@@ -51,13 +48,19 @@ function Driver() {
         return driverState;
     }
 
-    driver.init = function () {
+    // IO5, IO6 are implemented by R3 expansion board
+    // for reverse and forward function.
+    driver.FPin = null;
+    driver.RPin = null;
+    driver.init = function (forwardPin, reversePin) {
+        this.FPin = forwardPin;
+        this.RPin = reversePin;
         // set forward
         var PWMvalue = 0;
-        setpwm(forwardPin, PWMvalue);
+        setpwm(this.FPin, PWMvalue);
 
         // set reverse
-        setpwm(reversePin, PWMvalue);
+        setpwm(this.RPin, PWMvalue);
 
         setDriverState("park");
     }
@@ -67,8 +70,8 @@ function Driver() {
         forwardPW = 0;
         reversePW = 0;
 
-        setpwm(forwardPin, forwardPW);
-        setpwm(reversePin, reversePW);
+        setpwm(this.FPin, forwardPW);
+        setpwm(this.RPin, reversePW);
         console.log("Driver - Coast  (~0%)");
 
         setDriverState("park");
@@ -79,8 +82,8 @@ function Driver() {
         forwardPW = period;
         reversePW = period;
 
-        setpwm(forwardPin, forwardPW);
-        setpwm(reversePin, reversePW);
+        setpwm(this.FPin, forwardPW);
+        setpwm(this.RPin, reversePW);
         console.log("Driver - Brake  (0%)");
 
         setDriverState("park");
@@ -99,8 +102,8 @@ function Driver() {
         }
 
         reversePW = 0;
-        setpwm(forwardPin, forwardPW);
-        setpwm(reversePin, reversePW);
+        setpwm(this.FPin, forwardPW);
+        setpwm(this.RPin, reversePW);
         console.log("Driver - Forward(" + dutycycle + "%)");
 
         setDriverState("forward");
@@ -120,8 +123,8 @@ function Driver() {
             reversePW = period / 100 * dutycycle;
         }
 
-        setpwm(forwardPin, forwardPW);
-        setpwm(reversePin, reversePW);
+        setpwm(this.FPin, forwardPW);
+        setpwm(this.RPin, reversePW);
         console.log("Driver - Reverse(" + dutycycle + "%)");
 
         setDriverState("reverse");
