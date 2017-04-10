@@ -53,23 +53,33 @@ function Steerer() {
         return steererState;
     }
 
-    steerer.pin = null;
+    var SPin = null;
+    steerer.setSteerPin = function (steerPin) {
+        SPin = steerPin;
+    }
 
-    steerer.init = function(steerPin) {
-        this.pin = steerPin;
+    steerer.getSteerPin = function () {
+        if (SPin === null) {
+            throw new Error("Please defind steer pin first");
+        } else {
+            return SPin;
+        }
+    }
+
+    steerer.init = function() {
         pulseWidth = 1.5;
-        setpwm(this.pin, pulseWidth);
+        setpwm(SPin, pulseWidth);
 
         setSteererState("front");
+        console.log("Steerer - Initialization");
     }
 
     // angle: 90c
     steerer.front = function () {
         pulseWidth = 1.5;
-        setpwm(this.pin, pulseWidth);
+        setpwm(SPin, pulseWidth);
 
         setSteererState("front");
-
         console.log("Steerer - Turn front(90c)");
     }
 
@@ -78,10 +88,9 @@ function Steerer() {
         angle_check(angle);
 
         pulseWidth = 0.5 + (front_angle - angle) * pw_angle;
-        setpwm(this.pin, pulseWidth);
+        setpwm(SPin, pulseWidth);
 
         setSteererState("left");
-
         console.log("Steerer - Turn left (" + angle + "c)");
     }
 
@@ -90,10 +99,9 @@ function Steerer() {
         angle_check(angle);
 
         pulseWidth = 0.5 + (front_angle + angle) * pw_angle;
-        setpwm(this.pin, pulseWidth);
+        setpwm(SPin, pulseWidth);
 
         setSteererState("right");
-
         console.log("Steerer - Turn right(" + angle + "c)");
     }
 

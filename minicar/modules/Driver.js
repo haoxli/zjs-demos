@@ -50,19 +50,43 @@ function Driver() {
 
     // IO5, IO6 are implemented by R3 expansion board
     // for reverse and forward function.
-    driver.FPin = null;
-    driver.RPin = null;
-    driver.init = function (forwardPin, reversePin) {
-        this.FPin = forwardPin;
-        this.RPin = reversePin;
+    var FPin = null;
+    var RPin = null;
+
+    driver.setForwadPin = function (forwardPin) {
+        FPin = forwardPin;
+    }
+
+    driver.getForwadPin = function () {
+        if (FPin === null) {
+            throw new Error("Please defind forward pin first");
+        } else {
+            return FPin;
+        }
+    }
+
+    driver.setReversePin = function (reversePin) {
+        RPin = reversePin;
+    }
+
+    driver.getReversePin = function () {
+        if (RPin === null) {
+            throw new Error("Please defind reverse pin first");
+        } else {
+            return RPin;
+        }
+    }
+
+    driver.init = function () {
         // set forward
         var PWMvalue = 0;
-        setpwm(this.FPin, PWMvalue);
+        setpwm(FPin, PWMvalue);
 
         // set reverse
-        setpwm(this.RPin, PWMvalue);
+        setpwm(RPin, PWMvalue);
 
         setDriverState("park");
+        console.log("Driver - Initialization");
     }
 
     // dutycycle: ~0%
@@ -70,11 +94,11 @@ function Driver() {
         forwardPW = 0;
         reversePW = 0;
 
-        setpwm(this.FPin, forwardPW);
-        setpwm(this.RPin, reversePW);
-        console.log("Driver - Coast  (~0%)");
+        setpwm(FPin, forwardPW);
+        setpwm(RPin, reversePW);
 
         setDriverState("park");
+        console.log("Driver - Coast  (~0%)");
     }
 
     // dutycycle: 0%
@@ -82,11 +106,11 @@ function Driver() {
         forwardPW = period;
         reversePW = period;
 
-        setpwm(this.FPin, forwardPW);
-        setpwm(this.RPin, reversePW);
-        console.log("Driver - Brake  (0%)");
+        setpwm(FPin, forwardPW);
+        setpwm(RPin, reversePW);
 
         setDriverState("park");
+        console.log("Driver - Brake  (0%)");
     }
 
     // 0% <= dutycycle <= 100%
@@ -102,11 +126,11 @@ function Driver() {
         }
 
         reversePW = 0;
-        setpwm(this.FPin, forwardPW);
-        setpwm(this.RPin, reversePW);
-        console.log("Driver - Forward(" + dutycycle + "%)");
+        setpwm(FPin, forwardPW);
+        setpwm(RPin, reversePW);
 
         setDriverState("forward");
+        console.log("Driver - Forward(" + dutycycle + "%)");
     }
 
     // 0% <= dutycycle <= 100%
@@ -123,11 +147,11 @@ function Driver() {
             reversePW = period / 100 * dutycycle;
         }
 
-        setpwm(this.FPin, forwardPW);
-        setpwm(this.RPin, reversePW);
-        console.log("Driver - Reverse(" + dutycycle + "%)");
+        setpwm(FPin, forwardPW);
+        setpwm(RPin, reversePW);
 
         setDriverState("reverse");
+        console.log("Driver - Reverse(" + dutycycle + "%)");
     }
 
     return driver;

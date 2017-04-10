@@ -6,7 +6,8 @@ var pins = require("arduino101_pins");
 
 // Minicar steerer init
 var steerPin = pwm.open({ channel: pins.IO3 });
-steerer.init(steerPin);
+steerer.setSteerPin(steerPin);
+steerer.init();
 
 var checkNum = 0;
 var checkTimer = setInterval(function() {

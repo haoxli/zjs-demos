@@ -7,11 +7,14 @@ var pins = require("arduino101_pins");
 
 // Minicar init
 var steerPin = pwm.open({ channel: pins.IO3 });
+steerer.setSteerPin(steerPin);
+steerer.init();
+
 var forwardPin = pwm.open({ channel: pins.IO6 });
 var reversePin = pwm.open({ channel: pins.IO5 });
-
-steerer.init(steerPin);
-driver.init(forwardPin, reversePin);
+driver.setForwadPin(forwardPin);
+driver.setReversePin(reversePin);
+driver.init();
 
 // Minicar Self-check
 console.log("Minicar selfcheck - steerer start");

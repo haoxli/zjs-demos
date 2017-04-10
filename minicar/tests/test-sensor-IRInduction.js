@@ -8,11 +8,14 @@ var driver = require("Driver.js");
 
 // Minicar init
 var steerPin = pwm.open({ channel: pins.IO3 });
+steerer.setSteerPin(steerPin);
+steerer.init();
+
 var forwardPin = pwm.open({ channel: pins.IO6 });
 var reversePin = pwm.open({ channel: pins.IO5 });
-
-steerer.init(steerPin);
-driver.init(forwardPin, reversePin);
+driver.setForwadPin(forwardPin);
+driver.setReversePin(reversePin);
+driver.init();
 
 // Check output value of IR induction sensor
 var pinA, aValue, tmpValue, driverState;
