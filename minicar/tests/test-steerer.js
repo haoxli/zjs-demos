@@ -1,8 +1,12 @@
 console.log("Minicar steerer - start");
 
 var steerer = require("Steerer.js");
+var pwm = require("pwm");
+var pins = require("arduino101_pins");
 
 // Minicar steerer init
+var steerPin = pwm.open({ channel: pins.IO3 });
+steerer.setSteerPin(steerPin);
 steerer.init();
 
 var checkNum = 0;
