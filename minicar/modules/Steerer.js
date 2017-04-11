@@ -50,6 +50,10 @@ function Steerer() {
     }
 
     steerer.getSteererState = function () {
+        if (steererState === null) {
+            throw new Error("Please initialize Minicar first");
+        }
+
         return steererState;
     }
 
@@ -61,9 +65,9 @@ function Steerer() {
     steerer.getSteerPin = function () {
         if (SPin === null) {
             throw new Error("Please defind steer pin first");
-        } else {
-            return SPin;
         }
+
+        return SPin;
     }
 
     steerer.init = function() {
