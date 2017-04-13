@@ -45,10 +45,6 @@ function Driver() {
     }
 
     driver.getDriverState = function () {
-        if (driverState === null) {
-            throw new Error("Please initialize Minicar first");
-        }
-
         return driverState;
     }
 
@@ -64,9 +60,9 @@ function Driver() {
     driver.getForwadPin = function () {
         if (FPin === null) {
             throw new Error("Please defind forward pin first");
+        } else {
+            return FPin;
         }
-
-        return FPin;
     }
 
     driver.setReversePin = function (reversePin) {
@@ -76,9 +72,9 @@ function Driver() {
     driver.getReversePin = function () {
         if (RPin === null) {
             throw new Error("Please defind reverse pin first");
+        } else {
+            return RPin;
         }
-
-        return RPin;
     }
 
     driver.init = function () {
