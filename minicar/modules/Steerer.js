@@ -21,6 +21,7 @@ function Steerer() {
     // PW/Angle: (2.5-0.5) / 180 (ms/c)
     var pw_angle = 0.011;
     var front_angle = 90;
+    var current_angle = 0;
 
     var setpwm = function (pinName, PWMvalue) {
         if (typeof pinName !== "object") {
@@ -34,7 +35,7 @@ function Steerer() {
 
     // check angle
     var angle_check = function (angle) {
-        if (!angle || typeof angle !== "number") {
+        if (angle === null || typeof angle !== "number") {
             throw new Error("TypeError: Not a number!");
         } else if (angle < 0 || angle > 45) {
             throw new Error("RangeError: angle is " +
@@ -83,6 +84,7 @@ function Steerer() {
         pulseWidth = 1.5;
         setpwm(SPin, pulseWidth);
 
+        current_angle = 0;
         setSteererState("front");
         console.log("Steerer - Turn front(90c)");
     }
@@ -91,22 +93,54 @@ function Steerer() {
     steerer.left = function (angle) {
         angle_check(angle);
 
+        if (angle === 0) {
+            this.front();
+            return;
+        }
+
+        if (this.getSteererState() === "left") {
+            if (angle === current_angle) {
+                console.log("Steerer - Already be left (" + angle + "c)");
+            } else {
+                console.log("Steerer - Turn left from (" + current_angle +
+                            "c) to (" + angle + "c)");
+            }
+        } else {
+            console.log("Steerer - Turn left (" + angle + "c)");
+        }
+
         pulseWidth = 0.5 + (front_angle - angle) * pw_angle;
         setpwm(SPin, pulseWidth);
 
+        current_angle = angle;
         setSteererState("left");
-        console.log("Steerer - Turn left (" + angle + "c)");
     }
 
     // 0c < angle < 45c
     steerer.right = function (angle) {
         angle_check(angle);
 
+        if (angle === 0) {
+            this.front();
+            return;
+        }
+
+        if (this.getSteererState() === "right") {
+            if (angle === current_angle) {
+                console.log("Steerer - Already be right (" + angle + "c)");
+            } else {
+                console.log("Steerer - Turn right from (" + current_angle +
+                            "c) to (" + angle + "c)");
+            }
+        } else {
+            console.log("Steerer - Turn right (" + angle + "c)");
+        }
+
         pulseWidth = 0.5 + (front_angle + angle) * pw_angle;
         setpwm(SPin, pulseWidth);
 
+        current_angle = angle;
         setSteererState("right");
-        console.log("Steerer - Turn right(" + angle + "c)");
     }
 
     return steerer;

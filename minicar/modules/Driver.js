@@ -13,6 +13,7 @@ function Driver() {
     var period = 20;
     var forwardPW = 0;
     var reversePW = 0;
+    var current_dutycycle = 0;
 
     // Test that minimal pulse width for the motor is 30%
     var suggestedPW = 30 / 100 * period;
@@ -29,7 +30,7 @@ function Driver() {
 
     // check duty cycle
     var dc_check = function (dutycycle) {
-        if (!dutycycle || typeof dutycycle !== "number") {
+        if (dutycycle === null || typeof dutycycle !== "number") {
             throw new Error("TypeError: Not a number!");
         } else if (dutycycle < 0 || dutycycle > 100) {
             throw new Error("RangeError: duty cycle is out of " +
@@ -101,6 +102,7 @@ function Driver() {
         setpwm(FPin, forwardPW);
         setpwm(RPin, reversePW);
 
+        current_dutycycle = 0;
         setDriverState("park");
         console.log("Driver - Coast  (~0%)");
     }
@@ -113,6 +115,7 @@ function Driver() {
         setpwm(FPin, forwardPW);
         setpwm(RPin, reversePW);
 
+        current_dutycycle = 0;
         setDriverState("park");
         console.log("Driver - Brake  (0%)");
     }
@@ -122,19 +125,40 @@ function Driver() {
     driver.forward = function (dutycycle) {
         dc_check(dutycycle);
 
-        if (0 <= dutycycle && dutycycle <= 30) {
+        if (dutycycle === 0) {
+            this.coast();
+            return;
+        }
+
+        var DutycycleTmp;
+        if (0 < dutycycle && dutycycle <= 30) {
             // low dutycycle, set suggested value
             forwardPW = suggestedPW;
+            DutycycleTmp = 30;
+            console.log("Driver - Underpowered ! Corrected to (30%)");
         } else {
             forwardPW = period / 100 * dutycycle;
+            DutycycleTmp = dutycycle;
+        }
+
+        if (this.getDriverState() === "forward") {
+            if (DutycycleTmp === current_dutycycle) {
+                console.log("Driver - Already be Forward ("
+                            + DutycycleTmp + "%)");
+            } else {
+                console.log("Driver - Forward from (" + current_dutycycle +
+                            "%) to (" + DutycycleTmp + "%)");
+            }
+        } else {
+            console.log("Driver - Forward (" + DutycycleTmp + "%)");
         }
 
         reversePW = 0;
         setpwm(FPin, forwardPW);
         setpwm(RPin, reversePW);
 
+        current_dutycycle = DutycycleTmp;
         setDriverState("forward");
-        console.log("Driver - Forward(" + dutycycle + "%)");
     }
 
     // 0% <= dutycycle <= 100%
@@ -142,20 +166,40 @@ function Driver() {
     driver.reverse = function (dutycycle) {
         dc_check(dutycycle);
 
-        forwardPW = 0;
-
-        if (0 <= dutycycle && dutycycle <= 30) {
-            // low dutycycle, set suggested value
-            reversePW = suggestedPW;
-        } else {
-            reversePW = period / 100 * dutycycle;
+        if (dutycycle === 0) {
+            this.coast();
+            return;
         }
 
+        var DutycycleTmp;
+        if (0 < dutycycle && dutycycle <= 30) {
+            // low dutycycle, set suggested value
+            reversePW = suggestedPW;
+            DutycycleTmp = 30;
+            console.log("Driver - Underpowered ! Corrected to (30%)");
+        } else {
+            reversePW = period / 100 * dutycycle;
+            DutycycleTmp = dutycycle;
+        }
+
+        if (this.getDriverState() === "reverse") {
+            if (DutycycleTmp === current_dutycycle) {
+                console.log("Driver - Already be Reverse ("
+                            + DutycycleTmp + "%)");
+            } else {
+                console.log("Driver - Reverse from (" + current_dutycycle +
+                            "%) to (" + DutycycleTmp + "%)");
+            }
+        } else {
+            console.log("Driver - Reverse (" + DutycycleTmp + "%)");
+        }
+
+        forwardPW = 0;
         setpwm(FPin, forwardPW);
         setpwm(RPin, reversePW);
 
+        current_dutycycle = DutycycleTmp;
         setDriverState("reverse");
-        console.log("Driver - Reverse(" + dutycycle + "%)");
     }
 
     return driver;
