@@ -1,6 +1,21 @@
+// Minicar BLE communicating protocol:
+//     steerer(1byte) + angle(2byte) + driver(1byte) + speed(2byte) + others(2byte)
+// steerer:
+//     front: f >>> 0x66
+//     left : l >>> 0x6c
+//     right: r >>> 0x72
+// driver:
+//     coast  : c >>> 0x63
+//     brake  : b >>> 0x62
+//     forward: f >>> 0x66
+//     reverse: r >>> 0x72
+// number:
+//     0 ~ 9 >>> 0x30 ~ 0x39
+// char:
+//     a ~ z >>> 0x61 ~ 0x7a
+
 console.log("Minicar is controlled by Bluetooth");
 
-var gpio = require("gpio");
 var pwm = require("pwm");
 var ble = require ("ble");
 var pins = require("arduino101_pins");
@@ -19,15 +34,12 @@ driver.setReversePin(reversePin);
 driver.init();
 
 // Buffer init
-var SteererbufferData = new Buffer(1);
-var DriverbufferData = new Buffer(1);
+var basicBuffer = new Buffer(8);
 
 // start BLE
-// default value
-var defaultSpeed = 50;
-var defaultAngle = 30;
-var speed = defaultSpeed;
-var angle = defaultAngle;
+var speed = 50;
+var angle = 30;
+var CPFlag = true;
 
 var BuftoNum = function (buf) {
     var Num = 0;
@@ -38,199 +50,143 @@ var BuftoNum = function (buf) {
     }
 }
 
-var steererCharacteristic = new ble.Characteristic({
+var NumtoBuf = function (num) {
+    var buf = 0x30;
+    var checkValue = 0;
+
+    for (var j = 0; j < 10; j++) {
+        if (num === checkValue + j) return buf + j;
+    }
+}
+
+var StrtoBuf = function (Str) {
+    if (Str === "brake") return 0x62;
+    if (Str === "coast") return 0x63;
+    if (Str === "front" || Str === "forward") return 0x66;
+    if (Str === "left") return 0x6c;
+    if (Str === "right" || Str === "reverse") return 0x72;
+}
+
+var BasicCharacteristic = new ble.Characteristic({
     uuid: "ff10",
-    properties: ["notify", "read", "write"],
+    properties: ["read", "write"],
     descriptors: [
         new ble.Descriptor({
             uuid: "2901",
-            value: "steerer"
+            value: "Basic: steerer driver"
         })
     ]
 });
 
-var driverCharacteristic = new ble.Characteristic({
-    uuid: "ff20",
-    properties: ["notify", "read", "write"],
-    descriptors: [
-        new ble.Descriptor({
-            uuid: "2901",
-            value: "driver"
-        })
-    ]
-});
-
-steererCharacteristic.onReadRequest = function(offset, callback) {
+BasicCharacteristic.onReadRequest = function(offset, callback) {
     var SteererstateStr = steerer.getSteererState();
-    var tmpStr;
-    if (SteererstateStr === "front") {
-        tmpStr = 0x66;
-    } else if (SteererstateStr === "left") {
-        tmpStr = 0x6c;
-    } else if (SteererstateStr === "right") {
-        tmpStr = 0x72;
-    }
+    var SteererbufData = StrtoBuf(SteererstateStr);
+    basicBuffer.writeUInt8(SteererbufData, 0);
 
-    console.log("Minicar BLE - the current steering state '" +
-                SteererstateStr + "'");
+    var angleTens = (angle / 10) | 0;
+    var AngleTensbufData = NumtoBuf(angleTens);
+    basicBuffer.writeUInt8(AngleTensbufData, 1);
 
-    SteererbufferData.writeUInt8(tmpStr);
-    callback(this.RESULT_SUCCESS, SteererbufferData);
+    var angleOens = angle - angleTens * 10;
+    var AngleOensbufData = NumtoBuf(angleOens);
+    basicBuffer.writeUInt8(AngleOensbufData, 2);
+
+    var DriverstateStr = driver.getDriverState();
+    var DriverbufData = StrtoBuf(DriverstateStr);
+    basicBuffer.writeUInt8(DriverbufData, 3);
+
+    var speedTens = (speed / 10) | 0;
+    var SpeedTensbufData = NumtoBuf(speedTens);
+    basicBuffer.writeUInt8(SpeedTensbufData, 4);
+
+    var speedOens = speed - speedTens * 10;
+    var SpeedOensbufData = NumtoBuf(speedOens);
+    basicBuffer.writeUInt8(SpeedOensbufData, 5);
+
+    var NullbufData = 0x00;
+    basicBuffer.writeUInt8(NullbufData, 6);
+    basicBuffer.writeUInt8(NullbufData, 7);
+
+    callback(this.RESULT_SUCCESS, basicBuffer);
 };
 
-steererCharacteristic.onSubscribe = function(maxValueSize, callback) {
-    var SteererstateStr = steerer.getSteererState();
-    var tmpStr;
-    if (SteererstateStr === "front") {
-        tmpStr = 0x66;
-    } else if (SteererstateStr === "left") {
-        tmpStr = 0x6c;
-    } else if (SteererstateStr === "right") {
-        tmpStr = 0x72;
-    }
-
-    console.log("Minicar BLE - steering state transition into '" +
-                SteererstateStr + "'");
-
-    SteererbufferData.writeUInt8(tmpStr);
-    callback(SteererbufferData);
-};
-
-steererCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
-                                                callback) {
-    // front >>> f >>> 0x66
-    // left  >>> l >>> 0x6c
-    // right >>> r >>> 0x72
-    if (data.length === 3 &&
-        ((data.readUInt8() === 0x66 &&
-          data.readUInt8(1) === 0x30 &&
-          data.readUInt8(2) === 0x30) ||
-         ((data.readUInt8() === 0x6c ||
-           data.readUInt8() === 0x72) &&
-          (0x30 <= data.readUInt8(1) &&
-           data.readUInt8(1) <= 0x39 &&
-           0x30 <= data.readUInt8(2) &&
-           data.readUInt8(2) <= 0x39)))) {
-        if (data.readUInt8() === 0x66) {
-            steerer.front();
-        } else if (data.readUInt8() === 0x6c) {
-            var tens = BuftoNum(data.readUInt8(1));
-            var ones = BuftoNum(data.readUInt8(2));
-            if ((0 <= tens && tens < 4) ||
-                (tens === 4 && 0 <= ones && ones <= 5)) {
-                angle = tens * 10 + ones;
+BasicCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
+                                              callback) {
+    // filtering invalid BLE communicating protocol
+    if (data.length === 8) {
+        if (data.readUInt8(0) === 0x66 ||
+            data.readUInt8(0) === 0x6c ||
+            data.readUInt8(0) === 0x72) {
+            if (((0x30 <= data.readUInt8(1) &&
+                  data.readUInt8(1) <= 0x33) &&
+                 (0x30 <= data.readUInt8(2) &&
+                  data.readUInt8(2) <= 0x39)) ||
+                (data.readUInt8(1) === 0x34 &&
+                 (0x30 <= data.readUInt8(2) &&
+                  data.readUInt8(2) <= 0x35))) {
+                if (data.readUInt8(3) === 0x63 ||
+                    data.readUInt8(3) === 0x62 ||
+                    data.readUInt8(3) === 0x66 ||
+                    data.readUInt8(3) === 0x72) {
+                    if ((0x30 <= data.readUInt8(4) &&
+                         data.readUInt8(4) <= 0x39) &&
+                        (0x30 <= data.readUInt8(5) &&
+                         data.readUInt8(5) <= 0x39)) {
+                        CPFlag = true;
+                    } else {
+                        console.log("Minicar BLE - invalid driving speed");
+                        CPFlag = false;
+                    }
+                } else {
+                    console.log("Minicar BLE - invalid driving operator");
+                    CPFlag = false;
+                }
             } else {
-                angle = defaultAngle;
+                console.log("Minicar BLE - invalid steering angle");
+                CPFlag = false;
             }
-
-            steerer.left(angle);
-        } else if (data.readUInt8() === 0x72) {
-            var tens = BuftoNum(data.readUInt8(1));
-            var ones = BuftoNum(data.readUInt8(2));
-            if ((0 <= tens && tens < 4) ||
-                (tens === 4 && 0 <= ones && ones <= 5)) {
-                angle = tens * 10 + ones;
-            } else {
-                angle = defaultAngle;
-            }
-
-            steerer.right(angle);
+        } else {
+            console.log("Minicar BLE - invalid steering operator");
+            CPFlag = false;
         }
     } else {
-        console.log("Minicar BLE - set steering failure, please try again");
+        console.log("Minicar BLE - invalid communicating protocol length");
+        CPFlag = false;
+    }
 
+    if (!CPFlag) {
         callback(this.RESULT_INVALID_ATTRIBUTE_LENGTH);
         return;
+    }
+
+    // handle BLE communicating protocol
+    var angleTens = BuftoNum(data.readUInt8(1));
+    var angleOnes = BuftoNum(data.readUInt8(2));
+    angle = angleTens * 10 + angleOnes;
+
+    var speedTens = BuftoNum(data.readUInt8(4));
+    var speedOnes = BuftoNum(data.readUInt8(5));
+    speed = speedTens * 10 + speedOnes;
+
+    if (data.readUInt8(0) === 0x66) {
+        steerer.front();
+    } else if (data.readUInt8(0) === 0x6c) {
+        steerer.left(angle);
+    } else if (data.readUInt8(0) === 0x72) {
+        steerer.right(angle);
+    }
+
+    if (data.readUInt8(3) === 0x63) {
+        driver.coast();
+    } else if (data.readUInt8(3) === 0x62) {
+        driver.brake();
+    } else if (data.readUInt8(3) === 0x66) {
+        driver.forward(speed);
+    } else if (data.readUInt8(3) === 0x72) {
+        driver.reverse(speed);
     }
 
     console.log("Minicar BLE - control steering success");
-
-    callback(this.RESULT_SUCCESS);
-};
-
-driverCharacteristic.onReadRequest = function(offset, callback) {
-    var DriverstateStr = driver.getDriverState();
-    var tmpStr;
-    if (DriverstateStr === "coast") {
-        tmpStr = 0x63;
-    } else if (DriverstateStr === "brake") {
-        tmpStr = 0x62;
-    } else if (DriverstateStr === "forward") {
-        tmpStr = 0x66;
-    } else if (DriverstateStr === "reverse") {
-        tmpStr = 0x72;
-    }
-
-    console.log("Minicar BLE - the current driving state '" +
-                DriverstateStr + "'");
-
-    DriverbufferData.writeUInt8(tmpStr);
-    callback(this.RESULT_SUCCESS, DriverbufferData);
-};
-
-driverCharacteristic.onSubscribe = function(maxValueSize, callback) {
-    var DriverstateStr = driver.getDriverState();
-    var tmpStr;
-    if (DriverstateStr === "coast") {
-        tmpStr = 0x63;
-    } else if (DriverstateStr === "brake") {
-        tmpStr = 0x62;
-    } else if (DriverstateStr === "forward") {
-        tmpStr = 0x66;
-    } else if (DriverstateStr === "reverse") {
-        tmpStr = 0x72;
-    }
-
-    console.log("Minicar BLE - driving state transition into '" +
-                DriverstateStr + "'");
-
-    DriverbufferData.writeUInt8(tmpStr);
-    callback(DriverbufferData);
-};
-
-driverCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
-                                                callback) {
-    // coast   >>> c >>> 0x63
-    // brake   >>> b >>> 0x62
-    // forward >>> f >>> 0x66
-    // reverse >>> r >>> 0x72
-    if ((data.length === 3) &&
-        (((data.readUInt8() === 0x63 ||
-           data.readUInt8() === 0x62) &&
-          (data.readUInt8(1) === 0x30 &&
-           data.readUInt8(2) === 0x30)) ||
-         ((data.readUInt8() === 0x66 ||
-           data.readUInt8() === 0x72) &&
-          (0x30 <= data.readUInt8(1) &&
-           data.readUInt8(1) <= 0x39 &&
-           0x30 <= data.readUInt8(2) &&
-           data.readUInt8(2) <= 0x39)))) {
-        if (data.readUInt8() === 0x63) {
-            driver.coast();
-        } else if (data.readUInt8() === 0x62) {
-            driver.brake();
-        }else if (data.readUInt8() === 0x66) {
-            var tens = BuftoNum(data.readUInt8(1));
-            var ones = BuftoNum(data.readUInt8(2));
-            speed = tens * 10 + ones;
-
-            driver.forward(speed);
-        } else if (data.readUInt8() === 0x72) {
-            var tens = BuftoNum(data.readUInt8(1));
-            var ones = BuftoNum(data.readUInt8(2));
-            speed = tens * 10 + ones;
-
-            driver.reverse(speed);
-        }
-    } else {
-        console.log("Minicar BLE - set driving failure, please try again");
-
-        callback(this.RESULT_INVALID_ATTRIBUTE_LENGTH);
-        return;
-    }
-
-    console.log("Minicar BLE - control driving success");
-
     callback(this.RESULT_SUCCESS);
 };
 
@@ -246,8 +202,7 @@ ble.on("stateChange", function (state) {
             new ble.PrimaryService({
                 uuid: "ff00",
                 characteristics: [
-                    steererCharacteristic,
-                    driverCharacteristic
+                    BasicCharacteristic
                 ]
             })
         ], function (error) {
