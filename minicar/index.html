@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Smart Car Demo</title>
+    <link rel="icon" sizes="192x192" href="favicon.png">
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/bootstrap-switch.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <script type="text/javascript" src="js/jquery.min.js"></script>
+    <script type="text/javascript" src="js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="js/bootstrap-switch.min.js"></script>
+  </head>
+  <body>
+    <!-- Heading -->
+    <nav class="navbar navbar-default" role="navigation">
+      <div class="container-fluid">
+        <div class="navbar-header connect-bar">
+          <button type="button" class="btn btn-primary" data-disc-text="Disconnect" id="connectBtn">Connect</button>
+          <span id="deviceInfo"></span>
+          <div class="switch on-switch">
+            <input type="checkbox" id="onSwt" />
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Begin page content -->
+    <div class="container-fluid">
+      <div id="console">
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div class="container">
+        <div class="row">
+          <div class="col-xs-4 text-center"><button type="button" class="btn btn-primary" value="l" id="leftBtn">Left</button></div>
+          <div class="col-xs-4 text-center"><button type="button" class="btn btn-primary" value="f" id="frontBtn">Front</button></div>
+          <div class="col-xs-4 text-center"><button type="button" class="btn btn-primary" value="r" id="rightBtn">Right</button></div>
+        </div>
+        <div class="row">
+          <div class="col-xs-4 text-center" ><button type="button" class="btn btn-primary" id="speedUpBtn">Speed+</button></div>
+          <div class="col-xs-4 text-center">
+            <div class="switch dirc-switch">
+              <input type="checkbox" id="directionSwt" />
+            </div>
+          </div>
+          <div class="col-xs-4 text-center"><button type="button" class="btn btn-primary" id="speedDownBtn">Speed-</button></div>
+        </div>
+
+      </div>
+    </div>
+    <script type="text/javascript" src="js/car.js"></script>
+    <script type="text/javascript" src="js/app.js"></script>
+  </body>
+</html>
+
+
