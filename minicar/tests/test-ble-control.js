@@ -5,10 +5,10 @@
 //     left : l >>> 0x6c
 //     right: r >>> 0x72
 // driver:
-//     coast  : c >>> 0x63
-//     brake  : b >>> 0x62
-//     forward: f >>> 0x66
-//     reverse: r >>> 0x72
+//     coast(park): p >>> 0x70
+//     brake(park): p >>> 0x70
+//     forward    : f >>> 0x66
+//     reverse    : r >>> 0x72
 // number:
 //     0 ~ 9 >>> 0x30 ~ 0x39
 // char:
@@ -60,8 +60,7 @@ var NumtoBuf = function (num) {
 }
 
 var StrtoBuf = function (Str) {
-    if (Str === "brake") return 0x62;
-    if (Str === "coast") return 0x63;
+    if (Str === "park") return 0x70;
     if (Str === "front" || Str === "forward") return 0x66;
     if (Str === "left") return 0x6c;
     if (Str === "right" || Str === "reverse") return 0x72;
