@@ -27,7 +27,11 @@ var pins = require("arduino101_pins");
 var steerer = require("Steerer.js");
 var driver = require("Driver.js");
 
-// Minicar init
+//BLE
+var DEVICE_NAME = 'ZJS Demo';
+var gapUuid = 'fc00';
+
+// Car Init
 var steerPin = pwm.open({ channel: pins.IO3 });
 steerer.setSteerPin(steerPin);
 steerer.init();
@@ -38,11 +42,11 @@ driver.setForwadPin(forwardPin);
 driver.setReversePin(reversePin);
 driver.init();
 
-// Buffer init
+// Buffer Init
 var basicBuffer = new Buffer(8);
 var sensorBuffer = new Buffer(1);
 
-// IRI sensor init
+// IRI sensor Init
 var sensorPin = gpio.open({
     pin: pins.IO2,
     direction: "in"
@@ -99,18 +103,29 @@ var BooleantoStr = function (value) {
     }
 }
 
-var BasicCharacteristic = new ble.Characteristic({
-    uuid: "ff10",
+var DriverCharacteristic = new ble.Characteristic({
+    uuid: "fc0a",
     properties: ["read", "write"],
     descriptors: [
         new ble.Descriptor({
             uuid: "2901",
-            value: "Basic: steerer driver"
+            value: "Driver"
         })
     ]
 });
 
-BasicCharacteristic.onReadRequest = function(offset, callback) {
+var IRISensorCharacteristic = new ble.Characteristic({
+    uuid: "fc0b",
+    properties: ["read"],
+    descriptors: [
+        new ble.Descriptor({
+            uuid: "2901",
+            value: "IRISensor"
+        })
+    ]
+});
+
+DriverCharacteristic.onReadRequest = function(offset, callback) {
     var SteererstateStr = steerer.getSteererState();
     var SteererbufData = StrtoBuf(SteererstateStr);
     basicBuffer.writeUInt8(SteererbufData, 0);
@@ -145,7 +160,7 @@ BasicCharacteristic.onReadRequest = function(offset, callback) {
     callback(this.RESULT_SUCCESS, basicBuffer);
 };
 
-BasicCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
+DriverCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
                                               callback) {
     // filtering invalid BLE communicating protocol
     if (data.length === 8) {
@@ -230,18 +245,8 @@ BasicCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
     callback(this.RESULT_SUCCESS);
 };
 
-var SensorCharacteristic = new ble.Characteristic({
-    uuid: "ff20",
-    properties: ["read"],
-    descriptors: [
-        new ble.Descriptor({
-            uuid: "2901",
-            value: "Sensor: avoid obstacle"
-        })
-    ]
-});
 
-SensorCharacteristic.onReadRequest = function(offset, callback) {
+IRISensorCharacteristic.onReadRequest = function(offset, callback) {
     var IRISensorFlagStr = BooleantoStr(IRISensorFlag);
     var IRISensorBuffData = StrtoBuf(IRISensorFlagStr);
     sensorBuffer.writeUInt8(IRISensorBuffData, 0);
@@ -254,40 +259,48 @@ SensorCharacteristic.onReadRequest = function(offset, callback) {
 
 ble.on("stateChange", function (state) {
     if (state === "poweredOn") {
-        console.log("Minicar BLE - start BLE server");
-        deviceName = "Minicar BLE";
-        ble.startAdvertising(deviceName, ["ff00"]);
-
-        ble.updateRssi();
-
-        ble.setServices([
-            new ble.PrimaryService({
-                uuid: "ff00",
-                characteristics: [
-                    BasicCharacteristic,
-                    SensorCharacteristic
-                ]
-            })
-        ], function (error) {
-            if (error) {
-                console.log("Minicar BLE - set services error " + error);
-            }
-        });
+        console.log(DEVICE_NAME + ": Start BLE server");
+        ble.startAdvertising(DEVICE_NAME, [gapUuid], "https://goo.gl/3u5Iu7");
+    } else {
+        if (state === 'unsupported') {
+            console.log(DEVICE_NAME + ": BLE not enabled on board");
+        }
+        ble.stopAdvertising();
     }
 });
 
 ble.on("advertisingStart", function (error) {
-    console.log("Minicar BLE - advertising");
+    if (error) {
+        console.log(DEVICE_NAME + ": Fail to advertise Physical Web URL");
+        return;
+    }
+
+    ble.updateRssi();
+    ble.setServices([
+        new ble.PrimaryService({
+            uuid: gapUuid,
+            characteristics: [
+                DriverCharacteristic,
+                IRISensorCharacteristic
+            ]
+        })
+    ], function (error) {
+        if (error) {
+            console.log(DEVICE_NAME + ": Set BLE Services Error - " + error);
+            return;
+        }
+    });
+    console.log(DEVICE_NAME + ": Advertising as Physical Web Service");
 });
 
 ble.on("accept", function (clientAddress) {
-    console.log("Minicar BLE - accept " + clientAddress);
+    console.log("Client connected: " + clientAddress);
 });
 
 ble.on("disconnect", function (clientAddress) {
-    console.log("Minicar BLE - disconnect " + clientAddress);
+    console.log("Client disconnected: " + clientAddress);
 });
 
 ble.on("rssiUpdate", function (rssi) {
-    console.log("Minicar BLE - RSSI value " + rssi + "dBm");
+    console.log("RSSI changed: " + rssi + " dBm");
 });
