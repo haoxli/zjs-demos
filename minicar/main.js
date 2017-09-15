@@ -53,15 +53,15 @@ var sensorPin = gpio.open({
 });
 var IRISensorFlag = false;
 var SensorPinValue, IRItimer;
-
 IRItimer = setInterval(function () {
+    // false: roadblock
     SensorPinValue = sensorPin.read();
     IRISensorFlag = !SensorPinValue;
 
     if (driver.getDriverState() === "forward" && IRISensorFlag) {
         driver.brake();
     }
-}, 300);
+}, 200);
 
 // start BLE
 var speed = 50;
