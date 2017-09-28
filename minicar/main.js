@@ -48,8 +48,9 @@ var sensorBuffer = new Buffer(1);
 
 // IRI sensor Init
 var sensorPin = gpio.open({
-    pin: pins.IO2,
-    direction: "in"
+    pin: 2,
+    mode: "in",
+    edge: "any"
 });
 var IRISensorFlag = false;
 var SensorPinValue, IRItimer;
