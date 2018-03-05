@@ -9,14 +9,17 @@ function Driver() {
 
     var driver = {};
 
-    // Basic period(ms)
-    var period = 20;
+    var EventEmitter = require('events');
+    var driverEmitter = new EventEmitter();
+
+    var period = 20;              // Basic period(ms)
     var forwardPW = 0;
     var reversePW = 0;
     var current_dutycycle = 0;
-
-    // Test that minimal pulse width for the motor is 30%
-    var suggestedPW = 30 / 100 * period;
+    var speedRegulation = 60;     // Starting speed
+    var delayCoefficient = 15;    // Starting time(*20)
+    var pulseFlag = false;
+    var pulseTimer = null;
 
     var setpwm = function (pinName, PWMvalue) {
         if (typeof pinName !== "object") {
@@ -104,7 +107,9 @@ function Driver() {
 
         current_dutycycle = 0;
         setDriverState("park");
-        console.log("Driver - Coast  (~0%)");
+        if (pulseFlag === false) {
+            console.log("Driver - Coast  (~0%)");
+        }
     }
 
     // dutycycle: 0%
@@ -130,34 +135,43 @@ function Driver() {
             return;
         }
 
-        var DutycycleTmp;
-        if (0 < dutycycle && dutycycle <= 30) {
-            // low dutycycle, set suggested value
-            forwardPW = suggestedPW;
-            DutycycleTmp = 30;
-            console.log("Driver - Underpowered ! Corrected to (30%)");
-        } else {
-            forwardPW = period / 100 * dutycycle;
-            DutycycleTmp = dutycycle;
-        }
-
-        if (this.getDriverState() === "forward") {
-            if (DutycycleTmp === current_dutycycle) {
-                console.log("Driver - Already be Forward ("
-                            + DutycycleTmp + "%)");
-            } else {
-                console.log("Driver - Forward from (" + current_dutycycle +
-                            "%) to (" + DutycycleTmp + "%)");
+        if (pulseFlag === false) {
+            if (0 < dutycycle && dutycycle < 30) {
+                // low dutycycle, give warning message
+                console.log("Driver - Underpowered !");
             }
-        } else {
-            console.log("Driver - Forward (" + DutycycleTmp + "%)");
+
+            if (this.getDriverState() === "forward") {
+                if (dutycycle === current_dutycycle) {
+                    console.log("Driver - Already be Forward (" +
+                                dutycycle + "%)");
+                } else {
+                    console.log("Driver - Forward from (" + current_dutycycle +
+                                "%) to (" + dutycycle + "%)");
+                }
+            } else {
+                console.log("Driver - Forward (" + dutycycle + "%)");
+            }
         }
 
         reversePW = 0;
-        setpwm(FPin, forwardPW);
         setpwm(RPin, reversePW);
 
-        current_dutycycle = DutycycleTmp;
+        // Starting speed regulation
+        if (this.getDriverState() === "park" && pulseFlag === false) {
+            forwardPW = speedRegulation / 100 * period;
+            setpwm(FPin, forwardPW);
+
+            setTimeout(function () {
+                forwardPW = dutycycle / 100 * period;
+                setpwm(FPin, forwardPW);
+            }, 20 * delayCoefficient);
+        } else {
+            forwardPW = dutycycle / 100 * period;
+            setpwm(FPin, forwardPW);
+        }
+
+        current_dutycycle = dutycycle;
         setDriverState("forward");
     }
 
@@ -171,35 +185,96 @@ function Driver() {
             return;
         }
 
-        var DutycycleTmp;
-        if (0 < dutycycle && dutycycle <= 30) {
-            // low dutycycle, set suggested value
-            reversePW = suggestedPW;
-            DutycycleTmp = 30;
-            console.log("Driver - Underpowered ! Corrected to (30%)");
-        } else {
-            reversePW = period / 100 * dutycycle;
-            DutycycleTmp = dutycycle;
-        }
-
-        if (this.getDriverState() === "reverse") {
-            if (DutycycleTmp === current_dutycycle) {
-                console.log("Driver - Already be Reverse ("
-                            + DutycycleTmp + "%)");
-            } else {
-                console.log("Driver - Reverse from (" + current_dutycycle +
-                            "%) to (" + DutycycleTmp + "%)");
+        if (pulseFlag === false) {
+            if (0 < dutycycle && dutycycle <= 30) {
+                // low dutycycle, give warning message
+                console.log("Driver - Underpowered !");
             }
-        } else {
-            console.log("Driver - Reverse (" + DutycycleTmp + "%)");
+
+            if (this.getDriverState() === "reverse") {
+                if (dutycycle === current_dutycycle) {
+                    console.log("Driver - Already be Reverse (" +
+                                dutycycle + "%)");
+                } else {
+                    console.log("Driver - Reverse from (" + current_dutycycle +
+                                "%) to (" + dutycycle + "%)");
+                }
+            } else {
+                console.log("Driver - Reverse (" + dutycycle + "%)");
+            }
         }
 
         forwardPW = 0;
         setpwm(FPin, forwardPW);
-        setpwm(RPin, reversePW);
 
-        current_dutycycle = DutycycleTmp;
+        // Starting speed regulation
+        if (this.getDriverState() === "park" && pulseFlag === false) {
+            reversePW = speedRegulation / 100 * period;
+            setpwm(RPin, reversePW);
+
+            setTimeout(function () {
+                reversePW = dutycycle / 100 * period;
+                setpwm(RPin, reversePW);
+            }, 20 * delayCoefficient);
+        } else {
+            reversePW = dutycycle / 100 * period;
+            setpwm(RPin, reversePW);
+        }
+
+        current_dutycycle = dutycycle;
         setDriverState("reverse");
+    }
+
+    var basicDutycycle = 30;
+    var smooth = 2;
+    var increaseCount = 1;
+    var forwardCount = 1;
+    var coastCount = 1;
+    driverEmitter.on("driverEvent", function(countEvent) {
+        if (countEvent % coastCount < increaseCount) {
+            driver.forward((countEvent % coastCount) * smooth + basicDutycycle);
+        }
+
+        if (countEvent % coastCount === forwardCount) {
+            driver.coast();
+        }
+    });
+
+    // Module: pulse
+    //      dutycycle: peak value
+    //   forwardDelay: peak value time
+    //     coastDelay: coasting time
+    driver.pulseStart = function (dutycycle, forwardDelay, coastDelay) {
+        if (!pulseFlag) {
+            console.log("Driver - Pulse mode is starting");
+            pulseFlag = true;
+        }
+
+        smooth = 2;
+        increaseCount = ((dutycycle - basicDutycycle) / smooth) | 0;
+        forwardCount = (forwardDelay / period + increaseCount) | 0;
+        coastCount = (coastDelay / period + forwardCount) | 0;
+
+        if (pulseTimer === null) {
+            var count = 0;
+            pulseTimer = setInterval(function () {
+                driverEmitter.emit("driverEvent", count);
+                count++;
+            }, period);
+        }
+    }
+
+    driver.pulseStop = function () {
+        if (pulseTimer !== null) {
+            console.log("Driver - Pulse mode is stop");
+            clearInterval(pulseTimer);
+            pulseFlag = false;
+            pulseTimer = null;
+        }
+    }
+
+    driver.getPulseFlag = function () {
+        return pulseFlag;
     }
 
     return driver;
