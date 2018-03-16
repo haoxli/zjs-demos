@@ -17,6 +17,15 @@ driver.setForwadPin(forwardPin);
 driver.setReversePin(reversePin);
 driver.init();
 
+var UltrasonicSensorTimer = null;
+var TrackTimer = null;
+var AccTimer = null;
+
+var bleFlag = false;                     // Working, have clients?
+var trackFlag = true;                    // Working?
+var trackLostFlag = false;               // Working, but lost track?
+var UltrasonicSensorFlag = false;        // Working, have obstacle?
+
 // Ultrasonic sensor: IO2 IO13
 var UltrasonicSensorIn = gpio.open({
     pin: 2,
@@ -29,11 +38,10 @@ UltrasonicSensorOut.write(0);
 
 var UltrasonicSensorCount = 0;
 var UltrasonicSensorCountTmp = 0;
-var UltrasonicSensorFlag = false;
 var UltrasonicSensorFlagTmp = false;
 var UltrasonicSensorDistance = 10;
 
-var UltrasonicSensorTimer = setInterval(function () {
+UltrasonicSensorTimer = setInterval(function () {
     UltrasonicSensorCount = 0;
     UltrasonicSensorOut.write(1);
     UltrasonicSensorOut.write(0);
@@ -46,14 +54,28 @@ var UltrasonicSensorTimer = setInterval(function () {
 
     if (UltrasonicSensorCount < UltrasonicSensorDistance &&
         UltrasonicSensorCount !== 0) {
-        UltrasonicSensorFlagTmp = true;
+        UltrasonicSensorFlag = true;
         UltrasonicSensorCountTmp = 0;
     } else {
         UltrasonicSensorCountTmp++;
 
         if (UltrasonicSensorCountTmp >= 5) {
-            UltrasonicSensorFlagTmp = false;
+            UltrasonicSensorFlag = false;
             UltrasonicSensorCountTmp = 0;
+        }
+    }
+
+    if (UltrasonicSensorFlag) {
+        if (!UltrasonicSensorFlagTmp) {
+            UltrasonicSensorFlagTmp = true;
+            driver.brake();
+            steerer.front();
+            console.log("Minicar Avoiding - obstacles on the road");
+        }
+    } else {
+        if (UltrasonicSensorFlagTmp) {
+            UltrasonicSensorFlagTmp = false;
+            console.log("Minicar Avoiding - no obstacles and go");
         }
     }
 }, 200);
@@ -89,137 +111,214 @@ var TrackSensorLeft2 = gpio.open({
     edge: "any"
 });
 
-var currentAngle = 0;
 var frontAngle = 0;
 var turnAngle1 = 25;
 var turnAngle2 = 40;
-// Default value is 0
-var compensationAngle = 5;
 
-var trackLostFlag = false;
-var trackCount = 0;
+var TrackSensorRight2Flag = false;
+var TrackSensorRight1Flag = false;
+var TrackSensorMiddleFlag = false;
+var TrackSensorLeft1Flag = false;
+var TrackSensorLeft2Flag = false;
 
-var speed, forwardDelay, coastDelay;
-var Right2Value, Right1Value, MiddleValue, Left1Value, Left2Value;
-var trackTimer = setInterval(function () {
-    if (UltrasonicSensorFlagTmp) {
-        if (driver.getPulseFlag()) {
-            driver.pulseStop();
-        }
+TrackSensorRight2.onchange = function (event) {
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag) {
+        trackLostFlag = false;
+        trackLostCount = 0;
 
-        if (UltrasonicSensorFlag !== UltrasonicSensorFlagTmp) {
-            UltrasonicSensorFlag = true;
-            driver.brake();
-            currentAngle = 0;
-            steerer.front();
-            console.log("Minicar Avoiding - obstacles on the road");
-        }
-    } else {
-        if (UltrasonicSensorFlag) {
-            UltrasonicSensorFlag = false;
-            console.log("Minicar Avoiding - no obstacles and go");
-        }
+        if (event.value) {
+            TrackSensorRight2Flag = true;
 
-        if (!trackLostFlag) {
-            trackCount++;
-        }
-
-        Right2Value = TrackSensorRight2.read();
-        Right1Value = TrackSensorRight1.read();
-        MiddleValue = TrackSensorMiddle.read();
-        Left1Value = TrackSensorLeft1.read();
-        Left2Value = TrackSensorLeft2.read();
-
-        if (MiddleValue === 1) {
-            trackLostFlag = false;
-            trackCount = 0;
-
-            // Front(args): 70 20 200
-            speed = 70;
-            forwardDelay = 20;
-            coastDelay = 200;
-            driver.pulseStart(speed, forwardDelay, coastDelay);
-
-            if (steerer.getSteererState() !== "front") {
-                currentAngle = frontAngle;
-                steerer.front();
+            if (!TrackSensorRight1Flag && !TrackSensorMiddleFlag && !TrackSensorLeft1Flag) {
+                steerer.right(turnAngle2);
+                console.log("Minicar Tracking - turn right " + turnAngle2 + "c");
             }
         } else {
-            if (Right1Value === 1) {
-                trackLostFlag = false;
-                trackCount = 0;
+            TrackSensorRight2Flag = false;
+        }
+    }
+};
 
-                // Turn1(args): 70 80 100
-                speed = 70;
-                forwardDelay = 80;
-                coastDelay = 100;
-                driver.pulseStart(speed, forwardDelay, coastDelay);
+TrackSensorRight1.onchange = function (event) {
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag) {
+        trackLostFlag = false;
+        trackLostCount = 0;
 
-                if (currentAngle !== turnAngle1 - compensationAngle) {
-                    currentAngle = turnAngle1 - compensationAngle;
-                    steerer.right(currentAngle);
-                    console.log("Minicar Tracking - turn right " +
-                                currentAngle + "c");
-                }
-            } else if (Left1Value === 1) {
-                trackLostFlag = false;
-                trackCount = 0;
+        if (event.value) {
+            TrackSensorRight1Flag = true;
 
-                // Turn1(args): 70 80 100
-                speed = 70;
-                forwardDelay = 80;
-                coastDelay = 100;
-                driver.pulseStart(speed, forwardDelay, coastDelay);
+            if (!TrackSensorMiddleFlag) {
+                steerer.right(turnAngle1);
+                console.log("Minicar Tracking - turn right " + turnAngle1 + "c");
+            }
+        } else {
+            TrackSensorRight1Flag = false;
 
-                if (currentAngle !== turnAngle1 + compensationAngle) {
-                    currentAngle = turnAngle1 + compensationAngle;
-                    steerer.left(currentAngle);
-                    console.log("Minicar Tracking - turn left " +
-                                currentAngle + "c");
-                }
-            } else if (Right2Value === 1) {
-                trackLostFlag = false;
-                trackCount = 0;
-
-                // Turn2(args): 70 160 20
-                speed = 70;
-                forwardDelay = 160;
-                coastDelay = 40;
-                driver.pulseStart(speed, forwardDelay, coastDelay);
-
-                if (currentAngle !== turnAngle2 - compensationAngle) {
-                    currentAngle = turnAngle2 - compensationAngle;
-                    steerer.right(currentAngle);
-                    console.log("Minicar Tracking - turn right " +
-                                currentAngle + "c");
-                }
-            } else if (Left2Value === 1) {
-                trackLostFlag = false;
-                trackCount = 0;
-
-                // Turn2(args): 70 160 20
-                speed = 70;
-                forwardDelay = 160;
-                coastDelay = 40;
-                driver.pulseStart(speed, forwardDelay, coastDelay);
-
-                if (currentAngle !== turnAngle2 + compensationAngle) {
-                    currentAngle = turnAngle2 + compensationAngle;
-                    steerer.left(currentAngle);
-                    console.log("Minicar Tracking - turn left " +
-                                currentAngle + "c");
-                }
-            } else {
-                if (trackCount >= 100 && driver.getDriverState() !== "park") {
-                    driver.pulseStop();
-                    driver.brake();
-                    currentAngle = frontAngle;
-                    steerer.front();
-                    trackLostFlag = true;
-                    trackCount = 0;
-                    console.log("Minicar Tracking - lost trace");
-                }
+            if (!TrackSensorLeft1Flag && !TrackSensorMiddleFlag && TrackSensorRight2Flag) {
+                steerer.right(turnAngle2);
+                console.log("Minicar Tracking - turn right " + turnAngle2 + "c");
             }
         }
     }
+};
+
+TrackSensorMiddle.onchange = function (event) {
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag) {
+        trackLostFlag = false;
+        trackLostCount = 0;
+
+        if (event.value) {
+            TrackSensorMiddleFlag = true;
+
+            steerer.right(frontAngle);
+        } else {
+            TrackSensorMiddleFlag = false;
+
+            if (TrackSensorRight1Flag) {
+                steerer.right(turnAngle1);
+            } else if (TrackSensorLeft1Flag) {
+                steerer.left(turnAngle1);
+            }
+        }
+    }
+};
+
+TrackSensorLeft1.onchange = function (event) {
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag) {
+        trackLostFlag = false;
+        trackLostCount = 0;
+
+        if (event.value) {
+            TrackSensorLeft1Flag = true;
+
+            if (!TrackSensorMiddleFlag) {
+                steerer.left(turnAngle1);
+                console.log("Minicar Tracking - turn left " + turnAngle1 + "c");
+            }
+        } else {
+            TrackSensorLeft1Flag = false;
+
+            if (!TrackSensorRight1Flag && !TrackSensorMiddleFlag && TrackSensorLeft2Flag) {
+                steerer.left(turnAngle2);
+                console.log("Minicar Tracking - turn left " + turnAngle2 + "c");
+            }
+        }
+    }
+};
+
+TrackSensorLeft2.onchange = function (event) {
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag) {
+        trackLostFlag = false;
+        trackLostCount = 0;
+
+        if (event.value) {
+            TrackSensorLeft2Flag = true;
+
+            if (!TrackSensorRight1Flag && !TrackSensorMiddleFlag && !TrackSensorLeft1Flag) {
+                steerer.left(turnAngle2);
+                console.log("Minicar Tracking - turn left " + turnAngle2 + "c");
+            }
+        } else {
+            TrackSensorLeft2Flag = false;
+        }
+    }
+};
+
+var AccSensor = new Accelerometer({
+    frequency: 80
+});
+
+var AccValueY = 0;
+var AccValueYOld = 0;
+var AccValueYNew = 0;
+var AccValue = 0;
+
+AccTimer = setInterval(function () {
+    AccValueYNew = AccSensor.y;
+    AccValueY = (AccValueYNew - AccValueYOld) / 2;
+    AccValueYOld = AccValueYNew;
+    AccValue = (AccValue + AccValueY * 20) | 0;
 }, 20);
+
+AccSensor.onactivate = function() {
+    console.log("Acc sensor is activated");
+};
+
+AccSensor.start();
+
+var loseTime = 100;              // 20 * 100 = 2000ms
+var restartCount = 0;
+var trackLostCount = 0;
+var peakSpeed = 80;
+var basicSpeed = 1;
+var trackSpeed = basicSpeed;
+var thresholdSpeed = 40;
+var Increase = 4;
+
+TrackTimer = setInterval(function () {
+    // Track lost
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag && !TrackSensorRight2.read() &&
+        !TrackSensorRight1.read() && !TrackSensorMiddle.read() &
+        !TrackSensorLeft1.read() && !TrackSensorLeft2.read()) {
+        if (trackLostCount === loseTime + 2) {
+            trackLostCount = 0;
+        }
+
+        trackLostCount++;
+    }
+
+    if (trackLostCount >= loseTime && driver.getDriverState() !== "park") {
+        driver.brake();
+        steerer.front();
+        trackLostFlag = true;
+        trackLostCount = 0;
+        console.log("Minicar Tracking - lost trace");
+    }
+
+    // Tracking: pulse speed
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag && !trackLostFlag) {
+        if (driver.getDriverState() === "park") {
+            if (AccValue === 0) {
+                if (TrackSensorRight2.read() || TrackSensorRight1.read() ||
+                    TrackSensorMiddle.read() || TrackSensorLeft1.read() ||
+                    TrackSensorLeft2.read()) {
+                    if (restartCount === 5) {
+                        driver.forward(basicSpeed);
+                        restartCount = 0;
+                    }
+
+                    restartCount++;
+                }
+            }
+        } else {
+            restartCount = 0;
+
+            if (trackSpeed < thresholdSpeed) {
+                if (AccValue < -6) {
+                    trackSpeed = thresholdSpeed;
+                    return;
+                }
+
+                trackSpeed = trackSpeed + Increase;
+
+                if (trackSpeed >= thresholdSpeed) {
+                    trackSpeed = thresholdSpeed;
+                }
+            } else if (trackSpeed >= thresholdSpeed && trackSpeed <= peakSpeed) {
+                if (AccValue > 6) {
+                    trackSpeed = basicSpeed;
+                    return;
+                }
+
+                trackSpeed = trackSpeed + 3;
+            } else {
+                trackSpeed = basicSpeed;
+            }
+
+            driver.forward(trackSpeed);
+        }
+    }
+}, 20);
+
+driver.setPulseFlag(true);
+
