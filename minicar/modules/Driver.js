@@ -9,9 +9,6 @@ function Driver() {
 
     var driver = {};
 
-    var EventEmitter = require('events');
-    var driverEmitter = new EventEmitter();
-
     var period = 20;              // Basic period(ms)
     var forwardPW = 0;
     var reversePW = 0;

@@ -2,32 +2,23 @@ console.log("Mini Car is tracking");
 
 var gpio = require("gpio");
 var pwm = require("pwm");
-var pins = require("arduino101_pins");
+var ble = require("ble");
 var steerer = require("Steerer.js");
 var driver = require("Driver.js");
 
 // Car init
-var steerPin = pwm.open({ channel: pins.IO3 });
+var steerPin = pwm.open({ pin: "IO3" });
 steerer.setSteerPin(steerPin);
 steerer.init();
 
-var forwardPin = pwm.open({ channel: pins.IO6 });
-var reversePin = pwm.open({ channel: pins.IO5 });
+var forwardPin = pwm.open({ pin: "IO6" });
+var reversePin = pwm.open({ pin: "IO5" });
 driver.setForwadPin(forwardPin);
 driver.setReversePin(reversePin);
 driver.init();
 
-if (driver.getSpeedRegulationFlag()) {
-    driver.setSpeedRegulationFlag(false);
-}
-
-if (driver.getSpeedLogFlag()) {
-    driver.setSpeedLogFlag(false);
-}
-
-var UltrasonicSensorTimer = null;
-var TrackTimer = null;
-var AccTimer = null;
+driver.setSpeedRegulationFlag(false);
+driver.setSpeedLogFlag(false);
 
 var bleFlag = false;                     // Working, have clients?
 var trackFlag = true;                    // Working?
@@ -35,13 +26,9 @@ var trackLostFlag = true;               // Working, but lost track?
 var UltrasonicSensorFlag = false;        // Working, have obstacle?
 
 // Ultrasonic sensor: IO2 IO13
-var UltrasonicSensorIn = gpio.open({
-    pin: 2,
-    mode: "in",
-    edge: "any"
-});
+var UltrasonicSensorIn = gpio.open({ pin: 2, mode: "in", edge: "any" });
 
-var UltrasonicSensorOut = gpio.open({ pin: 13 });
+var UltrasonicSensorOut = gpio.open(13);
 UltrasonicSensorOut.write(0);
 
 var UltrasonicSensorCount = 0;
@@ -49,7 +36,7 @@ var UltrasonicSensorCountTmp = 0;
 var UltrasonicSensorFlagTmp = false;
 var UltrasonicSensorDistance = 10;
 
-UltrasonicSensorTimer = setInterval(function () {
+var UltrasonicSensorTimer = setInterval(function () {
     UltrasonicSensorCount = 0;
     UltrasonicSensorOut.write(1);
     UltrasonicSensorOut.write(0);
@@ -89,38 +76,18 @@ UltrasonicSensorTimer = setInterval(function () {
 }, 200);
 
 // Tracking sensor: IO4 IO7 IO8 IO10 IO11
-var TrackSensorRight2 = gpio.open({
-    pin: 4,
-    mode: "in",
-    edge: "any"
-});
+var TrackSensorRight2 = gpio.open({ pin: 4, mode: "in", edge: "any" });
 
-var TrackSensorRight1 = gpio.open({
-    pin: 7,
-    mode: "in",
-    edge: "any"
-});
+var TrackSensorRight1 = gpio.open({ pin: 7, mode: "in", edge: "any" });
 
-var TrackSensorMiddle = gpio.open({
-    pin: 8,
-    mode: "in",
-    edge: "any"
-});
+var TrackSensorMiddle = gpio.open({ pin: 8, mode: "in", edge: "any" });
 
-var TrackSensorLeft1 = gpio.open({
-    pin: 10,
-    mode: "in",
-    edge: "any"
-});
+var TrackSensorLeft1 = gpio.open({ pin: 10, mode: "in", edge: "any" });
 
-var TrackSensorLeft2 = gpio.open({
-    pin: 11,
-    mode: "in",
-    edge: "any"
-});
+var TrackSensorLeft2 = gpio.open({ pin: 11, mode: "in", edge: "any" });
 
 var AccSensor = new Accelerometer({
-    frequency: 80
+    frequency: 50
 });
 
 var AccValueY = 0;
@@ -128,7 +95,7 @@ var AccValueYOld = 0;
 var AccValueYNew = 0;
 var AccValue = 0;
 
-AccTimer = setInterval(function () {
+var AccTimer = setInterval(function () {
     AccValueYNew = AccSensor.y;
     AccValueY = (AccValueYNew - AccValueYOld) / 2;
     AccValueYOld = AccValueYNew;
@@ -136,7 +103,7 @@ AccTimer = setInterval(function () {
 }, 20);
 
 AccSensor.onactivate = function() {
-    console.log("Acc sensor is activated");
+    console.log("Acc sensor: is activated");
 };
 
 AccSensor.start();
@@ -158,7 +125,7 @@ var turnAngle2 = 40;
 
 var Right2Value, Right1Value, MiddleValue, Left1Value, Left2Value;
 
-TrackTimer = setInterval(function () {
+var TrackTimer = setInterval(function () {
     Right2Value = TrackSensorRight2.read();
     Right1Value = TrackSensorRight1.read();
     MiddleValue = TrackSensorMiddle.read();
@@ -283,3 +250,194 @@ TrackTimer = setInterval(function () {
         }
     }
 }, 20);
+
+// BLE control
+var basicBuffer = new Buffer(8);
+var sensorBuffer = new Buffer(1);
+var bleClient = null;              // Only one client can connect
+
+var bleSpeed = 50;
+var bleAngle = 30;
+
+var BuftoNum = function (buf) {
+    var Num = 0;
+    var checkValue = 0x30;
+
+    for (var j = 0; j < 10; j++) {
+        if (buf === checkValue + j) return Num + j;
+    }
+}
+
+var NumtoBuf = function (num) {
+    var buf = 0x30;
+    var checkValue = 0;
+
+    for (var j = 0; j < 10; j++) {
+        if (num === checkValue + j) return buf + j;
+    }
+}
+
+var StrtoBuf = function (Str) {
+    if (Str === "park") return 0x70;
+    if (Str === "front" || Str === "forward") return 0x66;
+    if (Str === "left") return 0x6c;
+    if (Str === "right" || Str === "reverse") return 0x72;
+}
+
+var DriverCharacteristic = new ble.Characteristic({
+    uuid: "fc0a",
+    properties: ["read", "write"],
+    descriptors: [
+        new ble.Descriptor({
+            uuid: "2901",
+            value: "Driver"
+        })
+    ]
+});
+
+var SensorCharacteristic = new ble.Characteristic({
+    uuid: "fc0b",
+    properties: ["read"],
+    descriptors: [
+        new ble.Descriptor({
+            uuid: "2901",
+            value: "Sensor"
+        })
+    ]
+});
+
+DriverCharacteristic.onReadRequest = function(offset, callback) {
+    var SteererstateStr = steerer.getSteererState();
+    var SteererbufData = StrtoBuf(SteererstateStr);
+    basicBuffer.writeUInt8(SteererbufData, 0);
+
+    var angleTens = (bleAngle / 10) | 0;
+    var AngleTensbufData = NumtoBuf(angleTens);
+    basicBuffer.writeUInt8(AngleTensbufData, 1);
+
+    var angleOens = bleAngle - angleTens * 10;
+    var AngleOensbufData = NumtoBuf(angleOens);
+    basicBuffer.writeUInt8(AngleOensbufData, 2);
+
+    var DriverstateStr = driver.getDriverState();
+    var DriverbufData = StrtoBuf(DriverstateStr);
+    basicBuffer.writeUInt8(DriverbufData, 3);
+
+    var speedTens = (bleSpeed / 10) | 0;
+    var SpeedTensbufData = NumtoBuf(speedTens);
+    basicBuffer.writeUInt8(SpeedTensbufData, 4);
+
+    var speedOens = bleSpeed - speedTens * 10;
+    var SpeedOensbufData = NumtoBuf(speedOens);
+    basicBuffer.writeUInt8(SpeedOensbufData, 5);
+
+    var NullbufData = 0x00;
+    basicBuffer.writeUInt8(NullbufData, 6);
+    basicBuffer.writeUInt8(NullbufData, 7);
+
+    console.log("Minicar BLE - send basic data '" +
+                basicBuffer.toString('hex') + "'");
+
+    callback(this.RESULT_SUCCESS, basicBuffer);
+};
+
+DriverCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
+                                              callback) {
+    // handle BLE communicating protocol
+    var angleTens = BuftoNum(data.readUInt8(1));
+    var angleOnes = BuftoNum(data.readUInt8(2));
+    bleAngle = angleTens * 10 + angleOnes;
+
+    var speedTens = BuftoNum(data.readUInt8(4));
+    var speedOnes = BuftoNum(data.readUInt8(5));
+    bleSpeed = speedTens * 10 + speedOnes;
+
+    if (data.readUInt8(0) === 0x66) {
+        steerer.front();
+    } else if (data.readUInt8(0) === 0x6c) {
+        steerer.left(bleAngle);
+    } else if (data.readUInt8(0) === 0x72) {
+        steerer.right(bleAngle);
+    }
+
+    if (data.readUInt8(3) === 0x63) {
+        driver.coast();
+    } else if (data.readUInt8(3) === 0x62) {
+        driver.brake();
+    } else if (data.readUInt8(3) === 0x66) {
+        if (!UltrasonicSensorFlag) {
+            driver.forward(bleSpeed);
+        }
+    } else if (data.readUInt8(3) === 0x72) {
+        driver.reverse(bleSpeed);
+    }
+
+    console.log("Minicar BLE - receive basic data '" +
+                data.toString('hex') + "'");
+
+    callback(this.RESULT_SUCCESS);
+};
+
+SensorCharacteristic.onReadRequest = function(offset, callback) {
+    var UltrasonicSensorBuffData;
+    if (UltrasonicSensorFlag) {
+        UltrasonicSensorBuffData = 0x74;
+    } else {
+        UltrasonicSensorBuffData = 0x66;
+    }
+    sensorBuffer.writeUInt8(UltrasonicSensorBuffData, 0);
+
+    console.log("Minicar BLE - send sensor data '" +
+                sensorBuffer.toString('hex') + "'");
+
+    callback(this.RESULT_SUCCESS, sensorBuffer);
+};
+
+ble.on("stateChange", function (state) {
+    if (state === "poweredOn") {
+        console.log("ZJS Demo: Start BLE server");
+        ble.startAdvertising("ZJS Demo", ["fc00"], "https://goo.gl/3u5Iu7");
+        ble.setServices([
+            new ble.PrimaryService({
+                uuid: "fc00",
+                characteristics: [
+                    DriverCharacteristic,
+                    SensorCharacteristic
+                ]
+            })
+        ]);
+    }
+});
+
+ble.on("advertisingStart", function (error) {
+    console.log("ZJS Demo" + ": Advertising as Physical Web Service");
+});
+
+ble.on("accept", function (clientAddress) {
+    if (bleClient === null) {
+        driver.brake();
+        steerer.front();
+        bleFlag = true;
+        trackFlag = false;
+        bleClient = clientAddress;
+        driver.setSpeedRegulationFlag(true);
+        driver.setSpeedLogFlag(true);
+        console.log("Client connected: " + clientAddress);
+    } else {
+        ble.disconnect(clientAddress);
+        console.log("There are already client connections: " + bleClient);
+    }
+});
+
+ble.on("disconnect", function (clientAddress) {
+    if (clientAddress === bleClient) {
+        driver.brake();
+        steerer.front();
+        bleFlag = false;
+        trackFlag = true;
+        bleClient = null;
+        driver.setSpeedRegulationFlag(false);
+        driver.setSpeedLogFlag(false);
+        console.log("Client disconnected: " + clientAddress);
+    }
+});
