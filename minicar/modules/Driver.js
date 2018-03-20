@@ -9,17 +9,14 @@ function Driver() {
 
     var driver = {};
 
-    var EventEmitter = require('events');
-    var driverEmitter = new EventEmitter();
-
     var period = 20;              // Basic period(ms)
     var forwardPW = 0;
     var reversePW = 0;
     var current_dutycycle = 0;
+    var speedLogFlag = true;
+    var speedRegulationFlag = false;
     var speedRegulation = 60;     // Starting speed
     var delayCoefficient = 15;    // Starting time(*20)
-    var pulseFlag = false;
-    var pulseTimer = null;
 
     var setpwm = function (pinName, PWMvalue) {
         if (typeof pinName !== "object") {
@@ -85,6 +82,22 @@ function Driver() {
         return RPin;
     }
 
+    driver.setSpeedRegulationFlag = function (Flag) {
+        speedRegulationFlag = Flag;
+    }
+
+    driver.getSpeedRegulationFlag = function () {
+        return speedRegulationFlag;
+    }
+
+    driver.setSpeedLogFlag = function (Flag) {
+        speedLogFlag = Flag;
+    }
+
+    driver.getSpeedLogFlag = function () {
+        return speedLogFlag;
+    }
+
     driver.init = function () {
         // set forward
         var PWMvalue = 0;
@@ -107,9 +120,7 @@ function Driver() {
 
         current_dutycycle = 0;
         setDriverState("park");
-        if (pulseFlag === false) {
-            console.log("Driver - Coast  (~0%)");
-        }
+        console.log("Driver - Coast  (~0%)");
     }
 
     // dutycycle: 0%
@@ -135,7 +146,7 @@ function Driver() {
             return;
         }
 
-        if (pulseFlag === false) {
+        if (speedLogFlag) {
             if (0 < dutycycle && dutycycle < 30) {
                 // low dutycycle, give warning message
                 console.log("Driver - Underpowered !");
@@ -158,14 +169,14 @@ function Driver() {
         setpwm(RPin, reversePW);
 
         // Starting speed regulation
-        if (this.getDriverState() === "park" && pulseFlag === false) {
+        if (this.getDriverState() === "park" && speedRegulationFlag === true) {
             forwardPW = speedRegulation / 100 * period;
             setpwm(FPin, forwardPW);
 
             setTimeout(function () {
                 forwardPW = dutycycle / 100 * period;
                 setpwm(FPin, forwardPW);
-            }, 20 * delayCoefficient);
+            }, period * delayCoefficient);
         } else {
             forwardPW = dutycycle / 100 * period;
             setpwm(FPin, forwardPW);
@@ -185,7 +196,7 @@ function Driver() {
             return;
         }
 
-        if (pulseFlag === false) {
+        if (speedLogFlag) {
             if (0 < dutycycle && dutycycle <= 30) {
                 // low dutycycle, give warning message
                 console.log("Driver - Underpowered !");
@@ -208,14 +219,14 @@ function Driver() {
         setpwm(FPin, forwardPW);
 
         // Starting speed regulation
-        if (this.getDriverState() === "park" && pulseFlag === false) {
+        if (this.getDriverState() === "park" && speedRegulationFlag === true) {
             reversePW = speedRegulation / 100 * period;
             setpwm(RPin, reversePW);
 
             setTimeout(function () {
                 reversePW = dutycycle / 100 * period;
                 setpwm(RPin, reversePW);
-            }, 20 * delayCoefficient);
+            }, period * delayCoefficient);
         } else {
             reversePW = dutycycle / 100 * period;
             setpwm(RPin, reversePW);
@@ -223,58 +234,6 @@ function Driver() {
 
         current_dutycycle = dutycycle;
         setDriverState("reverse");
-    }
-
-    var basicDutycycle = 30;
-    var smooth = 2;
-    var increaseCount = 1;
-    var forwardCount = 1;
-    var coastCount = 1;
-    driverEmitter.on("driverEvent", function(countEvent) {
-        if (countEvent % coastCount < increaseCount) {
-            driver.forward((countEvent % coastCount) * smooth + basicDutycycle);
-        }
-
-        if (countEvent % coastCount === forwardCount) {
-            driver.coast();
-        }
-    });
-
-    // Module: pulse
-    //      dutycycle: peak value
-    //   forwardDelay: peak value time
-    //     coastDelay: coasting time
-    driver.pulseStart = function (dutycycle, forwardDelay, coastDelay) {
-        if (!pulseFlag) {
-            console.log("Driver - Pulse mode is starting");
-            pulseFlag = true;
-        }
-
-        smooth = 2;
-        increaseCount = ((dutycycle - basicDutycycle) / smooth) | 0;
-        forwardCount = (forwardDelay / period + increaseCount) | 0;
-        coastCount = (coastDelay / period + forwardCount) | 0;
-
-        if (pulseTimer === null) {
-            var count = 0;
-            pulseTimer = setInterval(function () {
-                driverEmitter.emit("driverEvent", count);
-                count++;
-            }, period);
-        }
-    }
-
-    driver.pulseStop = function () {
-        if (pulseTimer !== null) {
-            console.log("Driver - Pulse mode is stop");
-            clearInterval(pulseTimer);
-            pulseFlag = false;
-            pulseTimer = null;
-        }
-    }
-
-    driver.getPulseFlag = function () {
-        return pulseFlag;
     }
 
     return driver;
