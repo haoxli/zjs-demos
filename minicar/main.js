@@ -101,11 +101,11 @@ var loseTime = 100;              // 20 * 100 = 2000ms
 var restartCount = 0;
 var trackLostCount = 0;
 
-var peakSpeed = 80;
+var peakSpeed = 90;
 var basicSpeed = 1;
 var trackSpeed = basicSpeed;
-var thresholdSpeed = 40;
-var Increase = 4;
+var thresholdSpeed = 70;
+var Increase = 10;
 
 var currentAngle = 0;
 var frontAngle = 0;
