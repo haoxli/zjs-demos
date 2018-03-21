@@ -20,10 +20,10 @@ driver.init();
 driver.setSpeedRegulationFlag(false);
 driver.setSpeedLogFlag(false);
 
-var bleFlag = false;                     // Working, have clients?
-var trackFlag = true;                    // Working?
-var trackLostFlag = true;               // Working, but lost track?
-var UltrasonicSensorFlag = false;        // Working, have obstacle?
+var bleFlag = false;
+var trackFlag = true;
+var trackLostFlag = true;
+var UltrasonicSensorFlag = false;
 
 // Ultrasonic sensor: IO2 IO13
 var UltrasonicSensorIn = gpio.open({ pin: 2, mode: "in", edge: "any" });
@@ -77,13 +77,9 @@ var UltrasonicSensorTimer = setInterval(function () {
 
 // Tracking sensor: IO4 IO7 IO8 IO10 IO11
 var TrackSensorRight2 = gpio.open({ pin: 4, mode: "in", edge: "any" });
-
 var TrackSensorRight1 = gpio.open({ pin: 7, mode: "in", edge: "any" });
-
 var TrackSensorMiddle = gpio.open({ pin: 8, mode: "in", edge: "any" });
-
 var TrackSensorLeft1 = gpio.open({ pin: 10, mode: "in", edge: "any" });
-
 var TrackSensorLeft2 = gpio.open({ pin: 11, mode: "in", edge: "any" });
 
 var AccSensor = new Accelerometer({
@@ -94,13 +90,6 @@ var AccValueY = 0;
 var AccValueYOld = 0;
 var AccValueYNew = 0;
 var AccValue = 0;
-
-var AccTimer = setInterval(function () {
-    AccValueYNew = AccSensor.y;
-    AccValueY = (AccValueYNew - AccValueYOld) / 2;
-    AccValueYOld = AccValueYNew;
-    AccValue = (AccValue + AccValueY * 20) | 0;
-}, 20);
 
 AccSensor.onactivate = function() {
     console.log("Acc sensor: is activated");
@@ -126,6 +115,12 @@ var turnAngle2 = 40;
 var Right2Value, Right1Value, MiddleValue, Left1Value, Left2Value;
 
 var TrackTimer = setInterval(function () {
+    // Accelerator Sensor
+    AccValueYNew = AccSensor.y;
+    AccValueY = (AccValueYNew - AccValueYOld) / 2;
+    AccValueYOld = AccValueYNew;
+    AccValue = (AccValue + AccValueY * 20) | 0;
+
     Right2Value = TrackSensorRight2.read();
     Right1Value = TrackSensorRight1.read();
     MiddleValue = TrackSensorMiddle.read();
