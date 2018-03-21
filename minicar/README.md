@@ -22,7 +22,7 @@ This demo shows a JavaScript implementation of automatic tracking based on [Zeph
 -	Need about 3m x 3m space, the ground should be in white or other lighter colors, and keep it clean.
 -	Ambient light should not be too dark or bright, which will affect the signal of infrared sensor 
 -	Use black tape (> 3cm) to lay a black track on white ground without any sharp corner, the radius of corner should be more than 60cm
-![Demo Layout](images/black_trace.png)
+![black trace](images/black_trace.png)
 
 ## Build and Flash
 - Get Source code: https://github.com/haoxli/zjs-demos and Zephyr.js
