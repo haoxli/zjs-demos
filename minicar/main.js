@@ -1,73 +1,258 @@
-// Minicar BLE communicating protocol:
-//     steerer(1byte) + angle(2byte) + driver(1byte) + speed(2byte) + others(2byte)
-// steerer:
-//     front: f >>> 0x66
-//     left : l >>> 0x6c
-//     right: r >>> 0x72
-// driver:
-//     coast(park): p >>> 0x70
-//     brake(park): p >>> 0x70
-//     forward    : f >>> 0x66
-//     reverse    : r >>> 0x72
-// flag:
-//     true : t >>> 0x74
-//     false: f >>> 0x66
-// number:
-//     0 ~ 9 >>> 0x30 ~ 0x39
-// char:
-//     a ~ z >>> 0x61 ~ 0x7a
-
-console.log("Minicar is controlled by Bluetooth " +
-            "using IR infrared sensor avoid obstacle");
+console.log("Mini Car is tracking");
 
 var gpio = require("gpio");
 var pwm = require("pwm");
-var ble = require ("ble");
-var pins = require("arduino101_pins");
+var ble = require("ble");
 var steerer = require("Steerer.js");
 var driver = require("Driver.js");
 
-//BLE
-var DEVICE_NAME = 'ZJS Demo';
-var gapUuid = 'fc00';
-
-// Car Init
-var steerPin = pwm.open({ channel: pins.IO3 });
+// Car init
+var steerPin = pwm.open({ pin: "IO3" });
 steerer.setSteerPin(steerPin);
 steerer.init();
 
-var forwardPin = pwm.open({ channel: pins.IO6 });
-var reversePin = pwm.open({ channel: pins.IO5 });
+var forwardPin = pwm.open({ pin: "IO6" });
+var reversePin = pwm.open({ pin: "IO5" });
 driver.setForwadPin(forwardPin);
 driver.setReversePin(reversePin);
 driver.init();
 
-// Buffer Init
-var basicBuffer = new Buffer(8);
-var sensorBuffer = new Buffer(1);
+driver.setSpeedRegulationFlag(false);
+driver.setSpeedLogFlag(false);
 
-// IRI sensor Init
-var sensorPin = gpio.open({
-    pin: 2,
-    mode: "in",
-    edge: "any"
-});
-var IRISensorFlag = false;
-var SensorPinValue, IRItimer;
-IRItimer = setInterval(function () {
-    // false: roadblock
-    SensorPinValue = sensorPin.read();
-    IRISensorFlag = !SensorPinValue;
+var bleFlag = false;
+var trackFlag = true;
+var trackLostFlag = true;
+var UltrasonicSensorFlag = false;
 
-    if (driver.getDriverState() === "forward" && IRISensorFlag) {
-        driver.brake();
+// Ultrasonic sensor: IO2 IO13
+var UltrasonicSensorIn = gpio.open({ pin: 2, mode: "in", edge: "any" });
+
+var UltrasonicSensorOut = gpio.open(13);
+UltrasonicSensorOut.write(0);
+
+var UltrasonicSensorCount = 0;
+var UltrasonicSensorCountTmp = 0;
+var UltrasonicSensorFlagTmp = false;
+var UltrasonicSensorDistance = 10;
+
+var UltrasonicSensorTimer = setInterval(function () {
+    UltrasonicSensorCount = 0;
+    UltrasonicSensorOut.write(1);
+    UltrasonicSensorOut.write(0);
+
+    for (var i = 0; i < 100; i++) {
+        if (UltrasonicSensorIn.read()) {
+            UltrasonicSensorCount++;
+        }
+    }
+
+    if (UltrasonicSensorCount < UltrasonicSensorDistance &&
+        UltrasonicSensorCount !== 0) {
+        UltrasonicSensorFlag = true;
+        UltrasonicSensorCountTmp = 0;
+    } else {
+        UltrasonicSensorCountTmp++;
+
+        if (UltrasonicSensorCountTmp >= 5) {
+            UltrasonicSensorFlag = false;
+            UltrasonicSensorCountTmp = 0;
+        }
+    }
+
+    if (UltrasonicSensorFlag) {
+        if (!UltrasonicSensorFlagTmp) {
+            UltrasonicSensorFlagTmp = true;
+            driver.brake();
+            steerer.front();
+            console.log("Minicar Avoiding - obstacles on the road");
+        }
+    } else {
+        if (UltrasonicSensorFlagTmp) {
+            UltrasonicSensorFlagTmp = false;
+            console.log("Minicar Avoiding - no obstacles and go");
+        }
     }
 }, 200);
 
-// start BLE
-var speed = 50;
-var angle = 30;
-var CPFlag = true;
+// Tracking sensor: IO4 IO7 IO8 IO10 IO11
+var TrackSensorRight2 = gpio.open({ pin: 4, mode: "in", edge: "any" });
+var TrackSensorRight1 = gpio.open({ pin: 7, mode: "in", edge: "any" });
+var TrackSensorMiddle = gpio.open({ pin: 8, mode: "in", edge: "any" });
+var TrackSensorLeft1 = gpio.open({ pin: 10, mode: "in", edge: "any" });
+var TrackSensorLeft2 = gpio.open({ pin: 11, mode: "in", edge: "any" });
+
+var AccSensor = new Accelerometer({
+    frequency: 50
+});
+
+var AccValueY = 0;
+var AccValueYOld = 0;
+var AccValueYNew = 0;
+var AccValue = 0;
+
+AccSensor.onactivate = function() {
+    console.log("Acc sensor: is activated");
+};
+
+AccSensor.start();
+
+var loseTime = 100;              // 20 * 100 = 2000ms
+var restartCount = 0;
+var trackLostCount = 0;
+
+var peakSpeed = 80;
+var basicSpeed = 1;
+var trackSpeed = basicSpeed;
+var thresholdSpeed = 40;
+var Increase = 4;
+
+var currentAngle = 0;
+var frontAngle = 0;
+var turnAngle1 = 25;
+var turnAngle2 = 40;
+
+var Right2Value, Right1Value, MiddleValue, Left1Value, Left2Value;
+
+var TrackTimer = setInterval(function () {
+    // Accelerator Sensor
+    AccValueYNew = AccSensor.y;
+    AccValueY = (AccValueYNew - AccValueYOld) / 2;
+    AccValueYOld = AccValueYNew;
+    AccValue = (AccValue + AccValueY * 20) | 0;
+
+    Right2Value = TrackSensorRight2.read();
+    Right1Value = TrackSensorRight1.read();
+    MiddleValue = TrackSensorMiddle.read();
+    Left1Value = TrackSensorLeft1.read();
+    Left2Value = TrackSensorLeft2.read();
+
+    // Tracking: steer control
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag) {
+        if (MiddleValue === 1) {
+            trackLostFlag = false;
+            trackLostCount = 0;
+
+            if (steerer.getSteererState() !== "front") {
+                currentAngle = frontAngle;
+                steerer.front();
+            }
+        } else {
+            if (Right1Value === 1) {
+                trackLostFlag = false;
+                trackLostCount = 0;
+
+                if (currentAngle !== turnAngle1) {
+                    currentAngle = turnAngle1;
+                    steerer.right(currentAngle);
+                    console.log("Minicar Tracking - turn right " +
+                                currentAngle + "c");
+                }
+            } else if (Left1Value === 1) {
+                trackLostFlag = false;
+                trackLostCount = 0;
+
+                if (currentAngle !== turnAngle1) {
+                    currentAngle = turnAngle1;
+                    steerer.left(currentAngle);
+                    console.log("Minicar Tracking - turn left " +
+                                currentAngle + "c");
+                }
+            } else if (Right2Value === 1) {
+                trackLostFlag = false;
+                trackLostCount = 0;
+
+                if (currentAngle !== turnAngle2) {
+                    currentAngle = turnAngle2;
+                    steerer.right(currentAngle);
+                    console.log("Minicar Tracking - turn right " +
+                                currentAngle + "c");
+                }
+            } else if (Left2Value === 1) {
+                trackLostFlag = false;
+                trackLostCount = 0;
+
+                if (currentAngle !== turnAngle2) {
+                    currentAngle = turnAngle2;
+                    steerer.left(currentAngle);
+                    console.log("Minicar Tracking - turn left " +
+                                currentAngle + "c");
+                }
+            }
+        }
+    }
+
+    // Tracking: speed control
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag && !trackLostFlag) {
+        if (driver.getDriverState() === "park") {
+            if (AccValue === 0) {
+                if (Right2Value || Right1Value || MiddleValue ||
+                    Left1Value || Left2Value) {
+                    if (restartCount === 5) {
+                        driver.forward(basicSpeed);
+                        restartCount = 0;
+                    }
+
+                    restartCount++;
+                }
+            }
+        } else {
+            restartCount = 0;
+
+            if (trackSpeed < thresholdSpeed) {
+                if (AccValue < -6) {
+                    trackSpeed = thresholdSpeed;
+                    return;
+                }
+
+                trackSpeed = trackSpeed + Increase;
+
+                if (trackSpeed >= thresholdSpeed) {
+                    trackSpeed = thresholdSpeed;
+                }
+            } else if (trackSpeed >= thresholdSpeed && trackSpeed <= peakSpeed) {
+                if (AccValue > 6) {
+                    trackSpeed = basicSpeed;
+                    return;
+                }
+
+                trackSpeed = trackSpeed + 3;
+            } else {
+                trackSpeed = basicSpeed;
+            }
+
+            driver.forward(trackSpeed);
+        }
+    }
+
+    // Track lost
+    if (!UltrasonicSensorFlag && !bleFlag && trackFlag && !trackLostFlag) {
+        if (!Right2Value && !Right1Value && !MiddleValue &&
+            !Left1Value && !Left2Value) {
+            if (trackLostCount === loseTime + 2) {
+                trackLostCount = 0;
+            }
+
+            trackLostCount++;
+        }
+
+        if (trackLostCount >= loseTime && driver.getDriverState() !== "park") {
+            driver.brake();
+            steerer.front();
+            trackLostFlag = true;
+            trackLostCount = 0;
+            console.log("Minicar Tracking - lost trace");
+        }
+    }
+}, 20);
+
+// BLE control
+var basicBuffer = new Buffer(8);
+var sensorBuffer = new Buffer(1);
+var bleClient = null;              // Only one client can connect
+
+var bleSpeed = 50;
+var bleAngle = 30;
 
 var BuftoNum = function (buf) {
     var Num = 0;
@@ -92,16 +277,6 @@ var StrtoBuf = function (Str) {
     if (Str === "front" || Str === "forward") return 0x66;
     if (Str === "left") return 0x6c;
     if (Str === "right" || Str === "reverse") return 0x72;
-    if (Str === "false") return 0x66;
-    if (Str === "true") return 0x74;
-}
-
-var BooleantoStr = function (value) {
-    if (value) {
-        return "true";
-    } else {
-        return "false";
-    }
 }
 
 var DriverCharacteristic = new ble.Characteristic({
@@ -115,13 +290,13 @@ var DriverCharacteristic = new ble.Characteristic({
     ]
 });
 
-var IRISensorCharacteristic = new ble.Characteristic({
+var SensorCharacteristic = new ble.Characteristic({
     uuid: "fc0b",
     properties: ["read"],
     descriptors: [
         new ble.Descriptor({
             uuid: "2901",
-            value: "IRISensor"
+            value: "Sensor"
         })
     ]
 });
@@ -131,11 +306,11 @@ DriverCharacteristic.onReadRequest = function(offset, callback) {
     var SteererbufData = StrtoBuf(SteererstateStr);
     basicBuffer.writeUInt8(SteererbufData, 0);
 
-    var angleTens = (angle / 10) | 0;
+    var angleTens = (bleAngle / 10) | 0;
     var AngleTensbufData = NumtoBuf(angleTens);
     basicBuffer.writeUInt8(AngleTensbufData, 1);
 
-    var angleOens = angle - angleTens * 10;
+    var angleOens = bleAngle - angleTens * 10;
     var AngleOensbufData = NumtoBuf(angleOens);
     basicBuffer.writeUInt8(AngleOensbufData, 2);
 
@@ -143,11 +318,11 @@ DriverCharacteristic.onReadRequest = function(offset, callback) {
     var DriverbufData = StrtoBuf(DriverstateStr);
     basicBuffer.writeUInt8(DriverbufData, 3);
 
-    var speedTens = (speed / 10) | 0;
+    var speedTens = (bleSpeed / 10) | 0;
     var SpeedTensbufData = NumtoBuf(speedTens);
     basicBuffer.writeUInt8(SpeedTensbufData, 4);
 
-    var speedOens = speed - speedTens * 10;
+    var speedOens = bleSpeed - speedTens * 10;
     var SpeedOensbufData = NumtoBuf(speedOens);
     basicBuffer.writeUInt8(SpeedOensbufData, 5);
 
@@ -163,68 +338,21 @@ DriverCharacteristic.onReadRequest = function(offset, callback) {
 
 DriverCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
                                               callback) {
-    // filtering invalid BLE communicating protocol
-    if (data.length === 8) {
-        if (data.readUInt8(0) === 0x66 ||
-            data.readUInt8(0) === 0x6c ||
-            data.readUInt8(0) === 0x72) {
-            if (((0x30 <= data.readUInt8(1) &&
-                  data.readUInt8(1) <= 0x33) &&
-                 (0x30 <= data.readUInt8(2) &&
-                  data.readUInt8(2) <= 0x39)) ||
-                (data.readUInt8(1) === 0x34 &&
-                 (0x30 <= data.readUInt8(2) &&
-                  data.readUInt8(2) <= 0x35))) {
-                if (data.readUInt8(3) === 0x63 ||
-                    data.readUInt8(3) === 0x62 ||
-                    data.readUInt8(3) === 0x66 ||
-                    data.readUInt8(3) === 0x72) {
-                    if ((0x30 <= data.readUInt8(4) &&
-                         data.readUInt8(4) <= 0x39) &&
-                        (0x30 <= data.readUInt8(5) &&
-                         data.readUInt8(5) <= 0x39)) {
-                        CPFlag = true;
-                    } else {
-                        console.log("Minicar BLE - invalid driving speed");
-                        CPFlag = false;
-                    }
-                } else {
-                    console.log("Minicar BLE - invalid driving operator");
-                    CPFlag = false;
-                }
-            } else {
-                console.log("Minicar BLE - invalid steering angle");
-                CPFlag = false;
-            }
-        } else {
-            console.log("Minicar BLE - invalid steering operator");
-            CPFlag = false;
-        }
-    } else {
-        console.log("Minicar BLE - invalid communicating protocol length");
-        CPFlag = false;
-    }
-
-    if (!CPFlag) {
-        callback(this.RESULT_INVALID_ATTRIBUTE_LENGTH);
-        return;
-    }
-
     // handle BLE communicating protocol
     var angleTens = BuftoNum(data.readUInt8(1));
     var angleOnes = BuftoNum(data.readUInt8(2));
-    angle = angleTens * 10 + angleOnes;
+    bleAngle = angleTens * 10 + angleOnes;
 
     var speedTens = BuftoNum(data.readUInt8(4));
     var speedOnes = BuftoNum(data.readUInt8(5));
-    speed = speedTens * 10 + speedOnes;
+    bleSpeed = speedTens * 10 + speedOnes;
 
     if (data.readUInt8(0) === 0x66) {
         steerer.front();
     } else if (data.readUInt8(0) === 0x6c) {
-        steerer.left(angle);
+        steerer.left(bleAngle);
     } else if (data.readUInt8(0) === 0x72) {
-        steerer.right(angle);
+        steerer.right(bleAngle);
     }
 
     if (data.readUInt8(3) === 0x63) {
@@ -232,25 +360,27 @@ DriverCharacteristic.onWriteRequest = function(data, offset, withoutResponse,
     } else if (data.readUInt8(3) === 0x62) {
         driver.brake();
     } else if (data.readUInt8(3) === 0x66) {
-        if (!IRISensorFlag) {
-            driver.forward(speed);
+        if (!UltrasonicSensorFlag) {
+            driver.forward(bleSpeed);
         }
     } else if (data.readUInt8(3) === 0x72) {
-        driver.reverse(speed);
+        driver.reverse(bleSpeed);
     }
 
     console.log("Minicar BLE - receive basic data '" +
                 data.toString('hex') + "'");
-    console.log("Minicar BLE - control success");
 
     callback(this.RESULT_SUCCESS);
 };
 
-
-IRISensorCharacteristic.onReadRequest = function(offset, callback) {
-    var IRISensorFlagStr = BooleantoStr(IRISensorFlag);
-    var IRISensorBuffData = StrtoBuf(IRISensorFlagStr);
-    sensorBuffer.writeUInt8(IRISensorBuffData, 0);
+SensorCharacteristic.onReadRequest = function(offset, callback) {
+    var UltrasonicSensorBuffData;
+    if (UltrasonicSensorFlag) {
+        UltrasonicSensorBuffData = 0x74;
+    } else {
+        UltrasonicSensorBuffData = 0x66;
+    }
+    sensorBuffer.writeUInt8(UltrasonicSensorBuffData, 0);
 
     console.log("Minicar BLE - send sensor data '" +
                 sensorBuffer.toString('hex') + "'");
@@ -260,48 +390,49 @@ IRISensorCharacteristic.onReadRequest = function(offset, callback) {
 
 ble.on("stateChange", function (state) {
     if (state === "poweredOn") {
-        console.log(DEVICE_NAME + ": Start BLE server");
-        ble.startAdvertising(DEVICE_NAME, [gapUuid], "https://goo.gl/3u5Iu7");
-    } else {
-        if (state === 'unsupported') {
-            console.log(DEVICE_NAME + ": BLE not enabled on board");
-        }
-        ble.stopAdvertising();
+        console.log("ZJS Demo: Start BLE server");
+        ble.startAdvertising("ZJS Demo", ["fc00"], "https://goo.gl/3u5Iu7");
+        ble.setServices([
+            new ble.PrimaryService({
+                uuid: "fc00",
+                characteristics: [
+                    DriverCharacteristic,
+                    SensorCharacteristic
+                ]
+            })
+        ]);
     }
 });
 
 ble.on("advertisingStart", function (error) {
-    if (error) {
-        console.log(DEVICE_NAME + ": Fail to advertise Physical Web URL");
-        return;
-    }
-
-    ble.updateRssi();
-    ble.setServices([
-        new ble.PrimaryService({
-            uuid: gapUuid,
-            characteristics: [
-                DriverCharacteristic,
-                IRISensorCharacteristic
-            ]
-        })
-    ], function (error) {
-        if (error) {
-            console.log(DEVICE_NAME + ": Set BLE Services Error - " + error);
-            return;
-        }
-    });
-    console.log(DEVICE_NAME + ": Advertising as Physical Web Service");
+    console.log("ZJS Demo" + ": Advertising as Physical Web Service");
 });
 
 ble.on("accept", function (clientAddress) {
-    console.log("Client connected: " + clientAddress);
+    if (bleClient === null) {
+        driver.brake();
+        steerer.front();
+        bleFlag = true;
+        trackFlag = false;
+        bleClient = clientAddress;
+        driver.setSpeedRegulationFlag(true);
+        driver.setSpeedLogFlag(true);
+        console.log("Client connected: " + clientAddress);
+    } else {
+        ble.disconnect(clientAddress);
+        console.log("There are already client connections: " + bleClient);
+    }
 });
 
 ble.on("disconnect", function (clientAddress) {
-    console.log("Client disconnected: " + clientAddress);
-});
-
-ble.on("rssiUpdate", function (rssi) {
-    console.log("RSSI changed: " + rssi + " dBm");
+    if (clientAddress === bleClient) {
+        driver.brake();
+        steerer.front();
+        bleFlag = false;
+        trackFlag = true;
+        bleClient = null;
+        driver.setSpeedRegulationFlag(false);
+        driver.setSpeedLogFlag(false);
+        console.log("Client disconnected: " + clientAddress);
+    }
 });
